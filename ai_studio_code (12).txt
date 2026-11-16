@@ -1,0 +1,751 @@
+import React, { useState } from 'react';
+import {
+  Banknote,
+  Camera,
+  CheckCircle2,
+  FileText,
+  Mail,
+  Package,
+  Truck,
+  Upload,
+} from 'lucide-react';
+import {
+  formatCurrency,
+  GENERATED_IMAGES,
+  Product,
+  ResolutionType,
+  SiteConfig,
+  THAI_BANKS,
+} from '../types';
+import { ResilientImage } from './StatusText';
+
+export interface NewRequestFormValues {
+  customerName: string;
+  customerPhone: string;
+  customerEmail: string;
+  orderNumber: string;
+  purchaseDate: string;
+  sku: string;
+  qty: number;
+  reason: string;
+  detail: string;
+  imageUrl: string;
+  customerReturnTracking?: string;
+  customerReturnCarrier?: string;
+  resolutionType: ResolutionType;
+  reshipName: string;
+  reshipAddress: string;
+  reshipPhone: string;
+  refundBankName: string;
+  refundAccountName: string;
+  refundAccountNumber: string;
+  refundAccountNumberConfirm: string;
+}
+
+interface NewRequestViewProps {
+  products: Product[];
+  returnReasons: string[];
+  siteConfig: SiteConfig;
+  onSubmitRequest: (values: NewRequestFormValues) => void;
+}
+
+export function NewRequestView({
+  products,
+  returnReasons,
+  siteConfig,
+  onSubmitRequest,
+}: NewRequestViewProps) {
+  const [form, setForm] = useState<NewRequestFormValues>({
+    customerName: '',
+    customerPhone: '',
+    customerEmail: '',
+    orderNumber: '',
+    purchaseDate: new Date().toISOString().split('T')[0],
+    sku: products[0]?.sku || '',
+    qty: 1,
+    reason: returnReasons[0] || '',
+    detail: '',
+    imageUrl: GENERATED_IMAGES.parcel,
+    customerReturnTracking: '',
+    customerReturnCarrier: 'Flash Express',
+    resolutionType: 'reship',
+    reshipName: '',
+    reshipAddress: '',
+    reshipPhone: '',
+    refundBankName: THAI_BANKS[0],
+    refundAccountName: '',
+    refundAccountNumber: '',
+    refundAccountNumberConfirm: '',
+  });
+
+  const [errorMsg, setErrorMsg] = useState<string>('');
+
+  const selectedProduct = products.find((p) => p.sku === form.sku) || products[0];
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setForm((prev) => ({ ...prev, imageUrl: reader.result as string }));
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.customerName.trim() || !form.orderNumber.trim() || !form.customerPhone.trim()) {
+      setErrorMsg('กรุณากรอกชื่อ-นามสกุล เบอร์โทรศัพท์ และหมายเลขคำสั่งซื้อให้ครบถ้วน');
+      return;
+    }
+
+    if (form.resolutionType === 'reship') {
+      if (
+        !form.reshipName.trim() ||
+        !form.reshipAddress.trim() ||
+        !form.reshipPhone.trim()
+      ) {
+        setErrorMsg(
+          'กรุณาระบุชื่อผู้รับ ที่อยู่จัดส่ง และเบอร์โทรศัพท์ให้ครบถ้วนสำหรับการจัดส่งสินค้าใหม่'
+        );
+        return;
+      }
+    } else {
+      if (!form.customerEmail.trim()) {
+        setErrorMsg('กรุณาระบุอีเมลลูกค้าสำหรับรับสลิปการโอนเงินคืน');
+        return;
+      }
+      const accNum = form.refundAccountNumber.trim();
+      const accConfirm = form.refundAccountNumberConfirm.trim();
+      if (!form.refundAccountName.trim() || !accNum || !accConfirm) {
+        setErrorMsg('กรุณาระบุชื่อบัญชีและเลขที่บัญชีธนาคารให้ครบถ้วน');
+        return;
+      }
+      if (accNum !== accConfirm) {
+        setErrorMsg('เลขที่บัญชีธนาคารและช่องยืนยันเลขที่บัญชีไม่ตรงกัน กรุณาตรวจสอบอีกครั้ง');
+        return;
+      }
+    }
+
+    setErrorMsg('');
+    onSubmitRequest(
+      form.resolutionType === 'refund'
+        ? { ...form, customerReturnTracking: '', customerReturnCarrier: '' }
+        : form
+    );
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900">ยื่นคำขอคืนสินค้าออนไลน์</h1>
+        <p className="text-sm text-slate-500 mt-1">
+          กรอกข้อมูลคำสั่งซื้อ สาเหตุการคืน และเลือกความประสงค์จัดส่งสินค้าใหม่หรือขอรับเงินคืน
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        <form
+          onSubmit={handleSubmit}
+          className="lg:col-span-2 bg-white border border-rose-100 rounded-xl p-6 space-y-6"
+        >
+          {errorMsg && (
+            <div
+              role="alert"
+              className="p-3.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-sm"
+            >
+              {errorMsg}
+            </div>
+          )}
+
+          {/* Section 1: Customer Info */}
+          <div className="space-y-4">
+            <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2 border-b border-rose-100 pb-3">
+              <FileText size={16} className="text-pink-600" aria-hidden="true" />
+              <span>1. ข้อมูลผู้ยื่นคำร้องและคำสั่งซื้อ</span>
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label htmlFor="req-name" className="block text-xs font-medium text-slate-700">
+                  ชื่อ-นามสกุลผู้สั่งซื้อ *
+                </label>
+                <input
+                  id="req-name"
+                  type="text"
+                  required
+                  value={form.customerName}
+                  onChange={(e) => setForm({ ...form, customerName: e.target.value })}
+                  placeholder="เช่น สมหญิง รักบริการ"
+                  className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg focus:border-pink-500"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="req-phone" className="block text-xs font-medium text-slate-700">
+                  เบอร์โทรศัพท์ติดต่อ *
+                </label>
+                <input
+                  id="req-phone"
+                  type="tel"
+                  required
+                  value={form.customerPhone}
+                  onChange={(e) => setForm({ ...form, customerPhone: e.target.value })}
+                  placeholder="08X-XXX-XXXX"
+                  className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg font-mono focus:border-pink-500"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="req-email" className="block text-xs font-medium text-slate-700">
+                  {form.resolutionType === 'refund'
+                    ? 'อีเมลสำหรับรับสลิปโอนเงินคืน *'
+                    : 'อีเมลสำหรับรับการแจ้งเตือน'}
+                </label>
+                <input
+                  id="req-email"
+                  type="email"
+                  required={form.resolutionType === 'refund'}
+                  value={form.customerEmail}
+                  onChange={(e) => setForm({ ...form, customerEmail: e.target.value })}
+                  placeholder="name@company.com"
+                  className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg focus:border-pink-500"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="req-order" className="block text-xs font-medium text-slate-700">
+                  หมายเลขคำสั่งซื้อ (Order Number) *
+                </label>
+                <input
+                  id="req-order"
+                  type="text"
+                  required
+                  value={form.orderNumber}
+                  onChange={(e) => setForm({ ...form, orderNumber: e.target.value })}
+                  placeholder="ORD-XXXXXX"
+                  className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg font-mono focus:border-pink-500"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Section 2: Product & Reason */}
+          <div className="space-y-4">
+            <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2 border-b border-rose-100 pb-3">
+              <Package size={16} className="text-pink-600" aria-hidden="true" />
+              <span>2. รายละเอียดสินค้าและสาเหตุการคืน</span>
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="sm:col-span-2 space-y-1.5">
+                <label htmlFor="req-sku" className="block text-xs font-medium text-slate-700">
+                  เลือกสินค้า (SKU) *
+                </label>
+                <select
+                  id="req-sku"
+                  value={form.sku}
+                  onChange={(e) => {
+                    const nextSku = e.target.value;
+                    const prod = products.find((p) => p.sku === nextSku);
+                    setForm({
+                      ...form,
+                      sku: nextSku,
+                      imageUrl: prod?.imageUrl || form.imageUrl,
+                    });
+                  }}
+                  className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg bg-white focus:border-pink-500"
+                >
+                  {products.map((p) => (
+                    <option key={p.sku} value={p.sku}>
+                      {p.name} ({p.sku}) — {formatCurrency(p.price)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="req-qty" className="block text-xs font-medium text-slate-700">
+                  จำนวนที่คืน *
+                </label>
+                <input
+                  id="req-qty"
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={form.qty}
+                  onChange={(e) =>
+                    setForm({ ...form, qty: Math.max(1, Number(e.target.value) || 1) })
+                  }
+                  className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg font-mono tabular-nums focus:border-pink-500"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="req-date" className="block text-xs font-medium text-slate-700">
+                  วันที่สั่งซื้อสินค้า
+                </label>
+                <input
+                  id="req-date"
+                  type="date"
+                  value={form.purchaseDate}
+                  onChange={(e) => setForm({ ...form, purchaseDate: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg font-mono focus:border-pink-500"
+                />
+              </div>
+              <div className="sm:col-span-2 space-y-1.5">
+                <label htmlFor="req-reason" className="block text-xs font-medium text-slate-700">
+                  สาเหตุการขอคืนสินค้า *
+                </label>
+                <select
+                  id="req-reason"
+                  value={form.reason}
+                  onChange={(e) => setForm({ ...form, reason: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg bg-white focus:border-pink-500"
+                >
+                  {returnReasons.map((reason) => (
+                    <option key={reason} value={reason}>
+                      {reason}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label htmlFor="req-detail" className="block text-xs font-medium text-slate-700">
+                อาการหรือรายละเอียดความเสียหายเพิ่มเติม
+              </label>
+              <textarea
+                id="req-detail"
+                rows={3}
+                value={form.detail}
+                onChange={(e) => setForm({ ...form, detail: e.target.value })}
+                placeholder="อธิบายลักษณะปัญหาที่พบ เช่น อุปกรณ์ไม่ครบ เปิดไม่ติด หรือกล่องเสียหายจากการขนส่ง..."
+                className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg focus:border-pink-500"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-xs font-medium text-slate-700">
+                ภาพถ่ายหลักฐานสินค้าที่ต้องการคืน
+              </label>
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="inline-flex items-center gap-2 px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 text-xs font-medium rounded-lg cursor-pointer transition-colors">
+                  <Upload size={14} aria-hidden="true" />
+                  <span>อัปโหลดรูปจากอุปกรณ์</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    className="hidden"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setForm((prev) => ({ ...prev, imageUrl: GENERATED_IMAGES.parcel }))
+                  }
+                  className="inline-flex items-center gap-1.5 px-3 py-2 border border-rose-200 hover:bg-rose-50 text-slate-600 text-xs font-medium rounded-lg transition-colors cursor-pointer"
+                >
+                  <Camera size={14} aria-hidden="true" />
+                  <span>ใช้ภาพตัวอย่างพัสดุคืน</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 3: Reshipment or Refund Selection */}
+          <div className="space-y-4">
+            <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2 border-b border-rose-100 pb-3">
+              <Truck size={16} className="text-pink-600" aria-hidden="true" />
+              <span>3. ความประสงค์เมื่อสินค้ามีข้อผิดพลาด (จัดส่งสินค้าใหม่ / ขอรับเงินคืน)</span>
+            </h2>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setForm({ ...form, resolutionType: 'reship' })}
+                className={`p-4 rounded-xl border text-left transition-colors cursor-pointer ${
+                  form.resolutionType === 'reship'
+                    ? 'bg-pink-50 border-pink-500 text-pink-950'
+                    : 'bg-white border-rose-200 text-slate-700 hover:bg-rose-50/60'
+                }`}
+              >
+                <div className="flex items-center gap-2 font-semibold text-sm">
+                  <Truck
+                    size={16}
+                    className={
+                      form.resolutionType === 'reship' ? 'text-pink-600' : 'text-slate-400'
+                    }
+                    aria-hidden="true"
+                  />
+                  <span>ต้องการจัดส่งสินค้าให้ใหม่</span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  ระบุชื่อผู้รับ ที่อยู่ และเบอร์โทรศัพท์สำหรับจัดส่งสินค้าทดแทน
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setForm({ ...form, resolutionType: 'refund' })}
+                className={`p-4 rounded-xl border text-left transition-colors cursor-pointer ${
+                  form.resolutionType === 'refund'
+                    ? 'bg-emerald-50 border-emerald-500 text-emerald-950'
+                    : 'bg-white border-rose-200 text-slate-700 hover:bg-rose-50/60'
+                }`}
+              >
+                <div className="flex items-center gap-2 font-semibold text-sm">
+                  <Banknote
+                    size={16}
+                    className={
+                      form.resolutionType === 'refund' ? 'text-emerald-600' : 'text-slate-400'
+                    }
+                    aria-hidden="true"
+                  />
+                  <span>ต้องการขอรับเงินคืน</span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  ระบุธนาคาร ชื่อบัญชี และเลขที่บัญชีธนาคารให้ตรงกัน
+                </p>
+              </button>
+            </div>
+
+            {form.resolutionType === 'reship' ? (
+              <div className="bg-rose-50/60 border border-rose-200 rounded-xl p-4 space-y-4">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold text-rose-950">
+                    ข้อมูลสำหรับจัดส่งสินค้าให้ใหม่ &amp; แบบฟอร์มส่งกลับสินค้า
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setForm((prev) => ({
+                        ...prev,
+                        reshipName: prev.customerName,
+                        reshipPhone: prev.customerPhone,
+                      }))
+                    }
+                    className="text-xs font-medium text-pink-600 hover:text-pink-700 cursor-pointer"
+                  >
+                    ใช้ชื่อและเบอร์โทรจากข้อ 1
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="reship-name"
+                      className="block text-xs font-medium text-slate-700"
+                    >
+                      ชื่อ-นามสกุลผู้รับสินค้า *
+                    </label>
+                    <input
+                      id="reship-name"
+                      type="text"
+                      required
+                      value={form.reshipName}
+                      onChange={(e) => setForm({ ...form, reshipName: e.target.value })}
+                      placeholder="ระบุชื่อผู้รับสินค้า"
+                      className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg bg-white focus:border-pink-500"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="reship-phone"
+                      className="block text-xs font-medium text-slate-700"
+                    >
+                      เบอร์โทรศัพท์ผู้รับ *
+                    </label>
+                    <input
+                      id="reship-phone"
+                      type="tel"
+                      required
+                      value={form.reshipPhone}
+                      onChange={(e) => setForm({ ...form, reshipPhone: e.target.value })}
+                      placeholder="08X-XXX-XXXX"
+                      className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg bg-white font-mono focus:border-pink-500"
+                    />
+                  </div>
+                  <div className="sm:col-span-2 space-y-1.5">
+                    <label
+                      htmlFor="reship-addr"
+                      className="block text-xs font-medium text-slate-700"
+                    >
+                      ที่อยู่สำหรับจัดส่งสินค้าใหม่ *
+                    </label>
+                    <textarea
+                      id="reship-addr"
+                      rows={2}
+                      required
+                      value={form.reshipAddress}
+                      onChange={(e) => setForm({ ...form, reshipAddress: e.target.value })}
+                      placeholder="บ้านเลขที่ อาคาร/หมู่บ้าน ถนน แขวง/ตำบล เขต/อำเภอ จังหวัด รหัสไปรษณีย์"
+                      className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg bg-white focus:border-pink-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-rose-200/70">
+                  <div className="space-y-1.5">
+                    <label htmlFor="req-cust-track" className="block text-xs font-medium text-slate-700">
+                      เลขพัสดุที่ลูกค้าส่งกลับสินค้า (ถ้าจัดส่งคืนแล้ว · ไม่บังคับ)
+                    </label>
+                    <input
+                      id="req-cust-track"
+                      type="text"
+                      value={form.customerReturnTracking || ''}
+                      onChange={(e) =>
+                        setForm({ ...form, customerReturnTracking: e.target.value })
+                      }
+                      placeholder="กรอกเลขพัสดุของคุณ เช่น TH0123456789"
+                      className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg bg-white font-mono focus:border-pink-500"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label htmlFor="req-cust-carrier" className="block text-xs font-medium text-slate-700">
+                      บริษัทขนส่งที่ลูกค้าใช้ส่งคืน
+                    </label>
+                    <select
+                      id="req-cust-carrier"
+                      value={form.customerReturnCarrier || 'Flash Express'}
+                      onChange={(e) =>
+                        setForm({ ...form, customerReturnCarrier: e.target.value })
+                      }
+                      className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg bg-white focus:border-pink-500"
+                    >
+                      <option value="Flash Express">Flash Express</option>
+                      <option value="Kerry Express">Kerry Express</option>
+                      <option value="Thailand Post (EMS)">Thailand Post (EMS)</option>
+                      <option value="J&T Express">J&T Express</option>
+                      <option value="SPX Express">SPX Express</option>
+                      <option value="ขนส่งอื่นๆ">ขนส่งอื่นๆ</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-emerald-50/50 border border-emerald-200 rounded-xl p-4 space-y-4">
+                <div className="p-3 rounded-lg bg-white border border-emerald-200 flex items-start gap-2.5 text-xs text-emerald-900">
+                  <Mail size={16} className="text-emerald-600 shrink-0 mt-0.5" aria-hidden="true" />
+                  <div>
+                    <p className="font-semibold">
+                      กรณีขอรับเงินคืน: ไม่ต้องกรอกแบบฟอร์มส่งกลับสินค้า
+                    </p>
+                    <p className="text-emerald-700 mt-0.5">
+                      เมื่อเจ้าหน้าที่ตรวจสอบและโอนเงินคืนเรียบร้อยแล้ว ระบบจะส่งสลิปการโอนเงินไปยังอีเมลของลูกค้า
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold text-rose-950">
+                    ข้อมูลบัญชีธนาคารสำหรับรับเงินคืน (ชื่อบัญชีและเลขบัญชีต้องตรงกัน)
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setForm((prev) => ({
+                        ...prev,
+                        refundAccountName: prev.customerName,
+                      }))
+                    }
+                    className="text-xs font-medium text-emerald-700 hover:text-emerald-800 cursor-pointer"
+                  >
+                    ใช้ชื่อจากข้อ 1
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="sm:col-span-2 space-y-1.5">
+                    <label
+                      htmlFor="refund-slip-email"
+                      className="block text-xs font-medium text-slate-700"
+                    >
+                      อีเมลลูกค้าสำหรับส่งสลิปโอนเงินคืน *
+                    </label>
+                    <input
+                      id="refund-slip-email"
+                      type="email"
+                      required
+                      value={form.customerEmail}
+                      onChange={(e) => setForm({ ...form, customerEmail: e.target.value })}
+                      placeholder="กรอกอีเมลสำหรับรับสลิปโอนเงิน เช่น customer@email.com"
+                      className="w-full px-3 py-2 text-sm border border-emerald-200 rounded-lg bg-white focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="refund-bank"
+                      className="block text-xs font-medium text-slate-700"
+                    >
+                      ธนาคาร *
+                    </label>
+                    <select
+                      id="refund-bank"
+                      value={form.refundBankName}
+                      onChange={(e) => setForm({ ...form, refundBankName: e.target.value })}
+                      className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg bg-white focus:border-pink-500"
+                    >
+                      {THAI_BANKS.map((bank) => (
+                        <option key={bank} value={bank}>
+                          {bank}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="refund-acc-name"
+                      className="block text-xs font-medium text-slate-700"
+                    >
+                      ชื่อบัญชีธนาคาร (ให้ตรงกับหน้าสมุดบัญชี) *
+                    </label>
+                    <input
+                      id="refund-acc-name"
+                      type="text"
+                      required
+                      value={form.refundAccountName}
+                      onChange={(e) =>
+                        setForm({ ...form, refundAccountName: e.target.value })
+                      }
+                      placeholder="ระบุชื่อ-นามสกุลเจ้าของบัญชี"
+                      className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg bg-white focus:border-pink-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="refund-acc-num"
+                      className="block text-xs font-medium text-slate-700"
+                    >
+                      เลขที่บัญชีธนาคาร *
+                    </label>
+                    <input
+                      id="refund-acc-num"
+                      type="text"
+                      required
+                      value={form.refundAccountNumber}
+                      onChange={(e) =>
+                        setForm({ ...form, refundAccountNumber: e.target.value })
+                      }
+                      placeholder="เช่น 123-4-56789-0"
+                      className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg bg-white font-mono focus:border-pink-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="refund-acc-confirm"
+                      className="block text-xs font-medium text-slate-700"
+                    >
+                      ยืนยันเลขที่บัญชีธนาคาร (ต้องตรงกัน) *
+                    </label>
+                    <input
+                      id="refund-acc-confirm"
+                      type="text"
+                      required
+                      value={form.refundAccountNumberConfirm}
+                      onChange={(e) =>
+                        setForm({ ...form, refundAccountNumberConfirm: e.target.value })
+                      }
+                      placeholder="กรอกเลขที่บัญชีซ้ำอีกครั้ง"
+                      className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg bg-white font-mono focus:border-pink-500"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="pt-4 border-t border-rose-100 flex items-center justify-end gap-3">
+            <button
+              type="submit"
+              className="inline-flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white text-sm font-semibold rounded-lg shadow-sm shadow-pink-500/20 transition-all cursor-pointer"
+            >
+              <CheckCircle2 size={16} aria-hidden="true" />
+              <span>ยืนยันส่งคำขอคืนสินค้า</span>
+            </button>
+          </div>
+        </form>
+
+        <aside className="bg-white border border-rose-100 rounded-xl p-6 space-y-5">
+          <h2 className="text-base font-semibold text-slate-900">สรุปข้อมูลคำขอคืนสินค้า</h2>
+
+          <div className="aspect-[4/3] w-full rounded-lg overflow-hidden border border-rose-200 bg-rose-50">
+            <ResilientImage
+              src={form.imageUrl}
+              alt={selectedProduct?.name || 'Return Item Preview'}
+            />
+          </div>
+
+          {selectedProduct && (
+            <div className="space-y-3 pt-2 border-t border-rose-100 text-sm">
+              <div>
+                <p className="font-semibold text-slate-900">{selectedProduct.name}</p>
+                <p className="text-xs font-mono text-slate-500 mt-0.5">
+                  {selectedProduct.sku} · {selectedProduct.category}
+                </p>
+              </div>
+              <div className="flex items-center justify-between text-xs text-slate-600">
+                <span>ราคาต่อหน่วย</span>
+                <span className="font-mono tabular-nums font-medium text-slate-900">
+                  {formatCurrency(selectedProduct.price)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs text-slate-600">
+                <span>จำนวนที่ขอคืน</span>
+                <span className="font-mono tabular-nums font-medium text-slate-900">
+                  {form.qty} ชิ้น
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs text-slate-600">
+                <span>ความประสงค์ข้อ 3</span>
+                <span className="font-semibold text-pink-700">
+                  {form.resolutionType === 'reship' ? 'จัดส่งสินค้าให้ใหม่' : 'ขอรับเงินคืน'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between pt-3 border-t border-rose-100">
+                <span className="text-xs font-medium text-slate-700">มูลค่าประเมินรวม</span>
+                <span className="text-base font-bold font-mono tabular-nums text-pink-600">
+                  {formatCurrency(selectedProduct.price * form.qty)}
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div className="bg-rose-50/70 border border-rose-100 rounded-lg p-4 space-y-1.5 text-xs text-slate-600">
+            <p className="font-semibold text-rose-950">ขั้นตอนหลังส่งคำร้อง</p>
+            <p>1. ระบบออกรหัส RTX เพื่อใช้ติดตามสถานะ</p>
+            <p>2. เจ้าหน้าที่ตรวจสอบคำร้องภายใน 24 ชั่วโมง</p>
+            <p>
+              {form.resolutionType === 'refund'
+                ? `3. โอนเงินคืนและส่งสลิปถึงอีเมล ${form.customerEmail.trim() || 'ลูกค้า'}`
+                : '3. จัดส่งสินค้าใหม่ตามที่อยู่ที่ระบุ'}
+            </p>
+          </div>
+
+          <div className="border-t border-rose-100 pt-4 space-y-1 text-xs text-slate-600">
+            <p className="font-semibold text-slate-800">ติดต่อผู้ดูแลระบบ (สำหรับลูกค้า)</p>
+            <p>
+              LINE ID:{' '}
+              <span className="font-mono font-semibold text-pink-700">
+                {siteConfig.supportLineId}
+              </span>
+            </p>
+            <p>
+              เบอร์ติดต่อ:{' '}
+              <a
+                href={`tel:${siteConfig.supportPhone}`}
+                className="font-mono font-semibold text-pink-700 hover:underline"
+              >
+                {siteConfig.supportPhone}
+              </a>
+            </p>
+            {siteConfig.supportNote && (
+              <p className="text-slate-500 pt-1">{siteConfig.supportNote}</p>
+            )}
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
+}

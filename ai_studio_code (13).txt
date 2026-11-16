@@ -1,0 +1,1055 @@
+import React, { useEffect, useState } from 'react';
+import {
+  ArrowRight,
+  Banknote,
+  CheckCircle2,
+  Clock,
+  Mail,
+  MapPin,
+  PackageCheck,
+  Search,
+  Send,
+  ShieldCheck,
+  Truck,
+  Upload,
+  XCircle,
+} from 'lucide-react';
+import {
+  formatCurrency,
+  ReturnRequest,
+  ReturnStatus,
+  Role,
+  ROLE_THAI_LABELS,
+  SiteConfig,
+  STATUS_WORKFLOW,
+  STEP_APPROVER_ROLE,
+} from '../types';
+import { ResilientImage, StatusIndicator } from './StatusText';
+
+export interface SendRefundSlipPayload {
+  sentToEmail: string;
+  amount: number;
+  transferRef: string;
+  slipImageUrl?: string;
+  note?: string;
+  closeAfterSend: boolean;
+}
+
+interface TrackingViewProps {
+  requests: ReturnRequest[];
+  selectedRequest: ReturnRequest | null;
+  onSelectRequest: (req: ReturnRequest | null) => void;
+  activeRole: Role;
+  siteConfig: SiteConfig;
+  onUpdateStatus: (id: string, nextStatus: ReturnStatus) => void;
+  onReceiveWarehouse?: (requestId: string, warehouseId: string, locationBin: string) => void;
+  onSaveCustomerReturnTracking: (
+    requestId: string,
+    trackingNumber: string,
+    carrier: string
+  ) => void;
+  onSaveCustomerEmail?: (requestId: string, email: string) => void;
+  onSendRefundSlip?: (
+    requestId: string,
+    payload: SendRefundSlipPayload,
+    onSuccess: () => void
+  ) => void;
+}
+
+const CUSTOMER_CARRIERS = [
+  'Flash Express',
+  'Kerry Express',
+  'Thailand Post (EMS)',
+  'J&T Express',
+  'SPX Express',
+  'ขนส่งอื่นๆ',
+];
+
+export function TrackingView({
+  requests,
+  selectedRequest,
+  onSelectRequest,
+  activeRole,
+  siteConfig,
+  onUpdateStatus,
+  onReceiveWarehouse,
+  onSaveCustomerReturnTracking,
+  onSaveCustomerEmail,
+  onSendRefundSlip,
+}: TrackingViewProps) {
+  const isCustomer = activeRole === 'Customer';
+  const activeReq = isCustomer ? selectedRequest : selectedRequest || requests[0] || null;
+
+  const [trackingQuery, setTrackingQuery] = useState<string>(
+    selectedRequest?.customerReturnTracking || selectedRequest?.id || ''
+  );
+  const [searchError, setSearchError] = useState<string>('');
+
+  const [returnParcelInput, setReturnParcelInput] = useState<string>(
+    activeReq?.customerReturnTracking || ''
+  );
+  const [returnCarrierInput, setReturnCarrierInput] = useState<string>(
+    activeReq?.customerReturnCarrier || CUSTOMER_CARRIERS[0]
+  );
+
+  const [customerEmailInput, setCustomerEmailInput] = useState<string>(
+    activeReq?.customerEmail || ''
+  );
+  const [slipEmail, setSlipEmail] = useState<string>(activeReq?.customerEmail || '');
+  const [slipAmount, setSlipAmount] = useState<number>(
+    activeReq ? activeReq.unitPrice * activeReq.qty : 0
+  );
+  const [slipRef, setSlipRef] = useState<string>('');
+  const [slipImageUrl, setSlipImageUrl] = useState<string>('');
+  const [slipNote, setSlipNote] = useState<string>('');
+  const [slipCloseAfter, setSlipCloseAfter] = useState<boolean>(true);
+  const [slipError, setSlipError] = useState<string>('');
+
+  useEffect(() => {
+    setReturnParcelInput(activeReq?.customerReturnTracking || '');
+    setReturnCarrierInput(activeReq?.customerReturnCarrier || CUSTOMER_CARRIERS[0]);
+    setCustomerEmailInput(activeReq?.customerEmail || '');
+    setSlipEmail(activeReq?.customerEmail || '');
+    setSlipAmount(activeReq ? activeReq.unitPrice * activeReq.qty : 0);
+    setSlipRef('');
+    setSlipImageUrl('');
+    setSlipNote('');
+    setSlipError('');
+    if (isCustomer && selectedRequest) {
+      setTrackingQuery(
+        selectedRequest.customerReturnTracking || selectedRequest.id
+      );
+      setSearchError('');
+    }
+  }, [activeReq?.id, activeReq?.customerReturnTracking, activeReq?.customerReturnCarrier, activeReq?.customerEmail, isCustomer, selectedRequest]);
+
+  const handleTrackingSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    const q = trackingQuery.trim().toLowerCase();
+    if (!q) {
+      setSearchError('กรุณากรอกเลขพัสดุ รหัสติดตาม (RTX) หรือเลขคำสั่งซื้อ');
+      return;
+    }
+
+    const matched = requests.find(
+      (r) =>
+        r.id.toLowerCase() === q ||
+        r.orderNumber.toLowerCase() === q ||
+        (r.customerReturnTracking && r.customerReturnTracking.toLowerCase() === q) ||
+        (r.outboundDispatch?.trackingNumber &&
+          r.outboundDispatch.trackingNumber.toLowerCase() === q)
+    );
+
+    if (!matched) {
+      onSelectRequest(null);
+      setSearchError(
+        `ไม่พบข้อมูลพัสดุหมายเลข "${trackingQuery.trim()}" กรุณาตรวจสอบเลขพัสดุอีกครั้ง`
+      );
+      return;
+    }
+
+    setSearchError('');
+    onSelectRequest(matched);
+  };
+
+  const handleSaveParcel = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeReq || !returnParcelInput.trim()) return;
+    onSaveCustomerReturnTracking(
+      activeReq.id,
+      returnParcelInput.trim(),
+      returnCarrierInput
+    );
+  };
+
+  const handleSaveEmail = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeReq || !customerEmailInput.trim() || !onSaveCustomerEmail) return;
+    onSaveCustomerEmail(activeReq.id, customerEmailInput.trim());
+  };
+
+  const handleSlipFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setSlipImageUrl(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSendSlipSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeReq || !onSendRefundSlip) return;
+    if (!slipEmail.trim() || !slipRef.trim() || slipAmount <= 0 || !slipImageUrl) {
+      setSlipError('กรุณากรอกอีเมล ยอดเงินคืน เลขอ้างอิงสลิป และแนบรูปภาพสลิปโอนเงินให้ครบถ้วน');
+      return;
+    }
+    setSlipError('');
+    onSendRefundSlip(
+      activeReq.id,
+      {
+        sentToEmail: slipEmail.trim(),
+        amount: slipAmount,
+        transferRef: slipRef.trim(),
+        slipImageUrl: slipImageUrl || undefined,
+        note: slipNote.trim() || undefined,
+        closeAfterSend: slipCloseAfter,
+      },
+      () => {
+        setSlipRef('');
+        setSlipImageUrl('');
+        setSlipNote('');
+      }
+    );
+  };
+
+  if (!activeReq) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">
+            ติดตามสถานะพัสดุคืน (7-Steps Workflow)
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">
+            กรอกเลขพัสดุของคุณเพื่อตรวจสอบสถานะการคืนสินค้าแบบเรียลไทม์
+          </p>
+        </div>
+
+        <div className="bg-white border border-rose-100 rounded-xl p-6 sm:p-10 max-w-2xl mx-auto space-y-5 shadow-xs shadow-pink-500/5">
+          <div className="text-center space-y-2">
+            <div className="w-12 h-12 rounded-xl bg-rose-50 border border-rose-200 text-pink-600 flex items-center justify-center mx-auto">
+              <Search size={22} aria-hidden="true" />
+            </div>
+            <h2 className="text-lg font-bold text-slate-900">
+              ค้นหาและติดตามสถานะด้วยเลขพัสดุของคุณ
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-500">
+              กรอกเลขพัสดุที่ลูกค้าจัดส่งคืน, รหัสติดตามคำร้อง (RTX-...) หรือเลขคำสั่งซื้อ (ORD-...)
+            </p>
+          </div>
+
+          <form onSubmit={handleTrackingSearch} className="space-y-3">
+            <div className="flex flex-col sm:flex-row gap-2.5">
+              <div className="relative flex-1">
+                <Search
+                  size={16}
+                  className="absolute left-3.5 top-1/2 -translate-y-1/2 text-rose-400"
+                  aria-hidden="true"
+                />
+                <input
+                  type="text"
+                  value={trackingQuery}
+                  onChange={(e) => {
+                    setTrackingQuery(e.target.value);
+                    setSearchError('');
+                  }}
+                  placeholder="กรอกเลขพัสดุของลูกค้า เช่น TH0123456789 หรือ RTX-..."
+                  aria-label="กรอกเลขพัสดุของลูกค้า"
+                  className="w-full pl-10 pr-3 py-2.5 text-sm border border-rose-200 rounded-lg bg-rose-50/30 focus:bg-white font-mono text-slate-900 focus:border-pink-500"
+                />
+              </div>
+              <button
+                type="submit"
+                className="px-5 py-2.5 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white text-sm font-semibold rounded-lg shadow-sm shadow-pink-500/20 transition-all whitespace-nowrap cursor-pointer"
+              >
+                ตรวจสอบสถานะ
+              </button>
+            </div>
+
+            {searchError && (
+              <div
+                role="alert"
+                className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs"
+              >
+                {searchError}
+              </div>
+            )}
+          </form>
+
+          {requests.length === 0 ? (
+            <p className="text-center text-xs text-slate-500">
+              ยังไม่มีรายการคำขอคืนสินค้าในระบบ
+            </p>
+          ) : (
+            <div className="pt-4 border-t border-rose-100 text-xs text-slate-500 text-center space-y-1">
+              <p>
+                หากยังไม่มีเลขติดตาม สามารถยื่นคำขอคืนสินค้าได้ที่เมนู{' '}
+                <span className="font-semibold text-pink-700">"ยื่นคำขอคืนสินค้า"</span>{' '}
+                เพื่อรับรหัสติดตาม
+              </p>
+              <p>
+                ติดต่อสอบถาม: LINE{' '}
+                <span className="font-mono font-semibold text-pink-700">
+                  {siteConfig.supportLineId}
+                </span>{' '}
+                · โทร{' '}
+                <a
+                  href={`tel:${siteConfig.supportPhone}`}
+                  className="font-mono font-semibold text-pink-700 hover:underline"
+                >
+                  {siteConfig.supportPhone}
+                </a>
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const currentStepIndex = STATUS_WORKFLOW.indexOf(activeReq.status);
+  const isRejected = activeReq.status === 'ปฏิเสธคำขอคืนสินค้า';
+  const nextWorkflowStep =
+    currentStepIndex >= 0 && currentStepIndex < STATUS_WORKFLOW.length - 1
+      ? STATUS_WORKFLOW[currentStepIndex + 1]
+      : null;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">
+            ติดตามสถานะพัสดุคืน (7-Steps Workflow)
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">
+            ตรวจสอบความคืบหน้าตั้งแต่ยื่นคำร้อง รับพัสดุเข้าคลัง ตรวจสภาพ จนถึงการปิดรายการ
+          </p>
+        </div>
+
+        {isCustomer ? (
+          <form onSubmit={handleTrackingSearch} className="flex items-center gap-2 w-full md:w-auto">
+            <div className="relative flex-1 md:w-72">
+              <Search
+                size={15}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-rose-400"
+                aria-hidden="true"
+              />
+              <input
+                type="text"
+                value={trackingQuery}
+                onChange={(e) => {
+                  setTrackingQuery(e.target.value);
+                  setSearchError('');
+                }}
+                placeholder="กรอกเลขพัสดุ / รหัสติดตามของคุณ"
+                aria-label="กรอกเลขพัสดุของลูกค้า"
+                className="w-full pl-9 pr-3 py-2 text-sm border border-rose-200 rounded-lg bg-white font-mono text-slate-800 focus:border-pink-500"
+              />
+            </div>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-pink-600 hover:bg-pink-700 text-white text-sm font-medium rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              ค้นหา
+            </button>
+          </form>
+        ) : (
+          <div className="flex items-center gap-2">
+            <Search size={16} className="text-rose-400 shrink-0" aria-hidden="true" />
+            <select
+              aria-label="เลือกรายการคำขอคืนสินค้าเพื่อติดตามสถานะ"
+              value={activeReq.id}
+              onChange={(e) => {
+                const found = requests.find((r) => r.id === e.target.value);
+                if (found) onSelectRequest(found);
+              }}
+              className="px-3 py-2 text-sm border border-rose-200 rounded-lg bg-white font-mono text-slate-800 focus:border-pink-500"
+            >
+              {requests.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.id} · {r.customerName}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+
+      {isCustomer && searchError && (
+        <div
+          role="alert"
+          className="p-3.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs"
+        >
+          {searchError}
+        </div>
+      )}
+
+      <div className="bg-white border border-rose-100 rounded-xl p-6 space-y-6">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 border-b border-rose-100 pb-5">
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-3">
+              <h2 className="text-xl font-bold font-mono text-slate-900">{activeReq.id}</h2>
+              <StatusIndicator status={activeReq.status} />
+            </div>
+            <p className="text-xs text-slate-500 font-mono">
+              คำสั่งซื้อ {activeReq.orderNumber} · ยื่นคำร้องวันที่ {activeReq.requestDate} · ผู้ยื่นคำร้อง {activeReq.customerName}
+            </p>
+          </div>
+
+          {(() => {
+            if (!nextWorkflowStep || isRejected) return null;
+            const nextApprover = STEP_APPROVER_ROLE[nextWorkflowStep];
+            const needsRefundSlip =
+              nextWorkflowStep === 'ตรวจสอบเสร็จสิ้น / ปิดรายการ' &&
+              activeReq.resolution?.type === 'refund' &&
+              (!activeReq.refundSlip?.transferRef?.trim() ||
+                !activeReq.refundSlip?.slipImageUrl);
+
+            if (activeRole === nextApprover) {
+              if (needsRefundSlip) {
+                return (
+                  <span className="px-3.5 py-2 rounded-lg bg-amber-50 border border-amber-200 text-xs font-medium text-amber-800 whitespace-nowrap shrink-0">
+                    กรุณาส่งสลิปและกรอกเลขอ้างอิงด้านล่างก่อน จึงจะปิดรายการได้
+                  </span>
+                );
+              }
+              return (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (
+                      nextWorkflowStep === 'ได้รับสินค้าแล้ว' &&
+                      onReceiveWarehouse
+                    ) {
+                      onReceiveWarehouse(
+                        activeReq.id,
+                        activeReq.warehouseId || 'WH-BKK-01',
+                        activeReq.locationBin === 'PENDING-BIN'
+                          ? 'RACK-A01'
+                          : activeReq.locationBin
+                      );
+                    } else {
+                      onUpdateStatus(activeReq.id, nextWorkflowStep);
+                    }
+                  }}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-pink-600 hover:bg-pink-700 text-white text-sm font-medium rounded-lg shadow-xs shadow-pink-500/15 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  <span>อนุมัติขั้นตอนถัดไป: {nextWorkflowStep}</span>
+                  <ArrowRight size={15} aria-hidden="true" />
+                </button>
+              );
+            }
+            if (activeRole !== 'Customer') {
+              return (
+                <span className="px-3.5 py-2 rounded-lg bg-rose-50 border border-rose-200 text-xs font-medium text-rose-800 whitespace-nowrap shrink-0">
+                  รอ{ROLE_THAI_LABELS[nextApprover]}อนุมัติ: {nextWorkflowStep}
+                </span>
+              );
+            }
+            return null;
+          })()}
+        </div>
+
+        {isRejected ? (
+          <div className="p-5 rounded-xl bg-rose-50 border border-rose-200 flex items-start gap-3">
+            <XCircle size={22} className="text-rose-600 shrink-0 mt-0.5" aria-hidden="true" />
+            <div>
+              <h3 className="text-sm font-semibold text-rose-900">คำขอคืนสินค้าถูกปฏิเสธ</h3>
+              <p className="text-xs text-rose-700 mt-1">
+                คำร้องนี้ไม่ผ่านเงื่อนไขการรับคืนสินค้า กรุณาติดต่อผู้ดูแลระบบทาง LINE ID:{' '}
+                <span className="font-mono font-semibold">{siteConfig.supportLineId}</span>{' '}
+                หรือโทร{' '}
+                <a
+                  href={`tel:${siteConfig.supportPhone}`}
+                  className="font-mono font-semibold underline"
+                >
+                  {siteConfig.supportPhone}
+                </a>{' '}
+                เพื่อสอบถามรายละเอียดเพิ่มเติม
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3">
+            {STATUS_WORKFLOW.map((step, index) => {
+              const isCompleted = index < currentStepIndex;
+              const isCurrent = index === currentStepIndex;
+              const stepApprover = ROLE_THAI_LABELS[STEP_APPROVER_ROLE[step]];
+              return (
+                <div
+                  key={step}
+                  className={`p-3.5 rounded-lg border transition-colors ${
+                    isCurrent
+                      ? 'bg-pink-50 border-pink-300'
+                      : isCompleted
+                        ? 'bg-emerald-50/70 border-emerald-200'
+                        : 'bg-rose-50/40 border-rose-100'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span
+                      className={`text-xs font-mono font-semibold tabular-nums ${
+                        isCurrent
+                          ? 'text-pink-700'
+                          : isCompleted
+                            ? 'text-emerald-700'
+                            : 'text-slate-400'
+                      }`}
+                    >
+                      0{index + 1}
+                    </span>
+                    {isCompleted ? (
+                      <CheckCircle2 size={15} className="text-emerald-600" aria-hidden="true" />
+                    ) : isCurrent ? (
+                      <Clock size={15} className="text-pink-600" aria-hidden="true" />
+                    ) : (
+                      <div className="w-3.5 h-3.5 rounded-full border border-rose-200" />
+                    )}
+                  </div>
+                  <p
+                    className={`text-xs font-medium leading-snug ${
+                      isCurrent
+                        ? 'text-pink-950 font-semibold'
+                        : isCompleted
+                          ? 'text-emerald-950'
+                          : 'text-slate-500'
+                    }`}
+                  >
+                    {step}
+                  </p>
+                  <p className="text-[11px] text-slate-400 mt-1.5">
+                    ผู้อนุมัติ: {stepApprover}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {!isRejected && activeReq.resolution?.type === 'refund' && (
+        <div className="bg-white border border-emerald-200 rounded-xl p-6 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-emerald-100 pb-3">
+            <div className="flex items-center gap-2">
+              <Mail size={17} className="text-emerald-600" aria-hidden="true" />
+              <h3 className="text-sm font-semibold text-slate-900">
+                ส่งสลิปโอนเงินคืนถึงอีเมลลูกค้า (ไม่ต้องกรอกแบบฟอร์มส่งกลับสินค้า)
+              </h3>
+            </div>
+            {activeReq.refundSlip ? (
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md">
+                <CheckCircle2 size={13} aria-hidden="true" />
+                <span>ส่งสลิปถึงเมลลูกค้าแล้ว</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-md">
+                <Clock size={13} aria-hidden="true" />
+                <span>รอส่งสลิปถึงอีเมลลูกค้า</span>
+              </span>
+            )}
+          </div>
+
+          {activeReq.refundSlip ? (
+            <div className="bg-emerald-50/50 border border-emerald-200 rounded-xl p-4 grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+              <div className="md:col-span-2 space-y-2 text-xs">
+                <div className="flex items-center gap-2 text-sm font-semibold text-emerald-950">
+                  <Banknote size={16} className="text-emerald-600" aria-hidden="true" />
+                  <span>หลักฐานการโอนเงินคืนถูกส่งไปยังอีเมลลูกค้าแล้ว</span>
+                </div>
+                <dl className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                  <div>
+                    <dt className="text-slate-500">ส่งสลิปไปยังอีเมล</dt>
+                    <dd className="font-mono font-semibold text-slate-900">
+                      {activeReq.refundSlip.sentToEmail}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-slate-500">ยอดเงินที่โอนคืน</dt>
+                    <dd className="font-mono font-bold text-emerald-700 text-sm">
+                      {formatCurrency(activeReq.refundSlip.amount)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-slate-500">เลขอ้างอิงสลิป (Transaction Ref)</dt>
+                    <dd className="font-mono font-semibold text-slate-900">
+                      {activeReq.refundSlip.transferRef}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-slate-500">วันเวลาที่ส่งสลิป</dt>
+                    <dd className="font-mono text-slate-700">
+                      {activeReq.refundSlip.sentAt} โดย {activeReq.refundSlip.sentBy}
+                    </dd>
+                  </div>
+                </dl>
+                {activeReq.resolution && (
+                  <p className="text-slate-600 pt-1">
+                    โอนเข้าบัญชี: {activeReq.resolution.refundBankName} ·{' '}
+                    {activeReq.resolution.refundAccountName} (
+                    <span className="font-mono font-semibold text-slate-900">
+                      {activeReq.resolution.refundAccountNumber}
+                    </span>
+                    )
+                  </p>
+                )}
+                {activeReq.refundSlip.note && (
+                  <p className="text-slate-600">หมายเหตุ: {activeReq.refundSlip.note}</p>
+                )}
+                {activeRole === 'Admin' && (
+                  <div className="pt-2">
+                    <a
+                      href={`mailto:${encodeURIComponent(activeReq.refundSlip.sentToEmail)}?subject=${encodeURIComponent(
+                        `[${siteConfig.brandName}] สลิปการโอนเงินคืนคำร้อง ${activeReq.id}`
+                      )}&body=${encodeURIComponent(
+                        `เรียนคุณ ${activeReq.customerName}\n\nทางร้านได้โอนเงินคืนจำนวน ${formatCurrency(
+                          activeReq.refundSlip.amount
+                        )} เรียบร้อยแล้ว\nเลขอ้างอิงสลิป: ${activeReq.refundSlip.transferRef}\nวันที่ทำรายการ: ${
+                          activeReq.refundSlip.sentAt
+                        }\n`
+                      )}`}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-lg font-medium transition-colors"
+                    >
+                      <Mail size={13} aria-hidden="true" />
+                      <span>เปิดแอปอีเมลเพื่อส่งซ้ำ</span>
+                    </a>
+                  </div>
+                )}
+              </div>
+
+              {activeReq.refundSlip.slipImageUrl && (
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-slate-600">ภาพสลิปโอนเงินคืน</p>
+                  <div className="aspect-[3/4] max-h-56 w-full rounded-lg overflow-hidden border border-emerald-200 bg-white">
+                    <ResilientImage
+                      src={activeReq.refundSlip.slipImageUrl}
+                      alt={`สลิปโอนเงินคืน ${activeReq.id}`}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : isCustomer ? (
+            <div className="space-y-4">
+              <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200 text-xs text-emerald-950 space-y-1.5">
+                <p className="font-semibold">
+                  รายการนี้ลูกค้าระบุว่า "ต้องการขอรับเงินคืน" — ไม่ต้องกรอกแบบฟอร์มส่งกลับสินค้า
+                </p>
+                <p className="text-emerald-800">
+                  เจ้าหน้าที่จะตรวจสอบคำร้อง โอนเงินเข้าบัญชี {activeReq.resolution.refundBankName} ({activeReq.resolution.refundAccountName} ·{' '}
+                  <span className="font-mono font-semibold">{activeReq.resolution.refundAccountNumber}</span>) และส่งสลิปการโอนเงินไปยังอีเมลของท่าน
+                </p>
+              </div>
+
+              {onSaveCustomerEmail && (
+                <form onSubmit={handleSaveEmail} className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                  <div className="sm:col-span-2 space-y-1.5">
+                    <label htmlFor="cust-refund-email" className="block text-xs font-medium text-slate-700">
+                      อีเมลสำหรับรับสลิปโอนเงินคืน *
+                    </label>
+                    <input
+                      id="cust-refund-email"
+                      type="email"
+                      required
+                      value={customerEmailInput}
+                      onChange={(e) => setCustomerEmailInput(e.target.value)}
+                      placeholder="ระบุอีเมลของท่าน เช่น customer@email.com"
+                      className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg focus:border-pink-500"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white text-sm font-semibold rounded-lg shadow-xs shadow-pink-500/20 transition-all whitespace-nowrap cursor-pointer"
+                  >
+                    <Mail size={15} aria-hidden="true" />
+                    <span>{activeReq.customerEmail ? 'อัปเดตอีเมลรับสลิป' : 'บันทึกอีเมลรับสลิป'}</span>
+                  </button>
+                </form>
+              )}
+            </div>
+          ) : activeRole === 'Admin' ? (
+            <form onSubmit={handleSendSlipSubmit} className="space-y-4">
+              {slipError && (
+                <div role="alert" className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs">
+                  {slipError}
+                </div>
+              )}
+
+              <div className="p-3 rounded-lg bg-emerald-50/60 border border-emerald-200 text-xs text-emerald-900">
+                บัญชีปลายทางของลูกค้า: <span className="font-semibold">{activeReq.resolution.refundBankName}</span> ·{' '}
+                {activeReq.resolution.refundAccountName} · เลขบัญชี{' '}
+                <span className="font-mono font-bold">{activeReq.resolution.refundAccountNumber}</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="space-y-1.5">
+                  <label htmlFor="track-slip-email" className="block text-xs font-medium text-slate-700">
+                    อีเมลลูกค้าปลายทาง *
+                  </label>
+                  <input
+                    id="track-slip-email"
+                    type="email"
+                    required
+                    value={slipEmail}
+                    onChange={(e) => setSlipEmail(e.target.value)}
+                    placeholder="customer@email.com"
+                    className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg focus:border-pink-500"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label htmlFor="track-slip-amount" className="block text-xs font-medium text-slate-700">
+                    ยอดเงินที่โอนคืน (บาท) *
+                  </label>
+                  <input
+                    id="track-slip-amount"
+                    type="number"
+                    min={1}
+                    required
+                    value={slipAmount}
+                    onChange={(e) => setSlipAmount(Number(e.target.value) || 0)}
+                    className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg font-mono tabular-nums focus:border-pink-500"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label htmlFor="track-slip-ref" className="block text-xs font-medium text-slate-700">
+                    เลขอ้างอิงสลิป (Transaction Ref) *
+                  </label>
+                  <input
+                    id="track-slip-ref"
+                    type="text"
+                    required
+                    value={slipRef}
+                    onChange={(e) => setSlipRef(e.target.value)}
+                    placeholder="เช่น SLIP-20261115-001"
+                    className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg font-mono focus:border-pink-500"
+                  />
+                </div>
+
+                <div className="sm:col-span-2 space-y-1.5">
+                  <label htmlFor="track-slip-note" className="block text-xs font-medium text-slate-700">
+                    หมายเหตุถึงลูกค้า (ไม่บังคับ)
+                  </label>
+                  <input
+                    id="track-slip-note"
+                    type="text"
+                    value={slipNote}
+                    onChange={(e) => setSlipNote(e.target.value)}
+                    placeholder="เช่น โอนเงินคืนเต็มจำนวนเรียบร้อยแล้ว"
+                    className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg focus:border-pink-500"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-medium text-slate-700">
+                    แนบภาพสลิปโอนเงิน *
+                  </label>
+                  <label className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 text-xs font-medium rounded-lg cursor-pointer transition-colors">
+                    <Upload size={14} aria-hidden="true" />
+                    <span>{slipImageUrl ? 'อัปโหลดสลิปแล้ว (เปลี่ยนรูป)' : 'อัปโหลดรูปสลิป *'}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleSlipFileChange}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {slipImageUrl && (
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-emerald-50/50 border border-emerald-200">
+                  <div className="w-14 h-16 rounded border border-emerald-200 overflow-hidden bg-white shrink-0">
+                    <ResilientImage src={slipImageUrl} alt="ตัวอย่างสลิปที่แนบ" />
+                  </div>
+                  <div className="text-xs text-emerald-900">
+                    <p className="font-semibold">แนบรูปภาพสลิปโอนเงินเรียบร้อยแล้ว</p>
+                    <p className="text-emerald-700">พร้อมส่งไปยังอีเมล {slipEmail || 'ลูกค้า'}</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-rose-100">
+                <label className="inline-flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={slipCloseAfter}
+                    onChange={(e) => setSlipCloseAfter(e.target.checked)}
+                    className="rounded border-rose-300 text-pink-600 focus:ring-pink-500"
+                  />
+                  <span>ปิดรายการคำร้องหลังส่งสลิป (ตรวจสอบเสร็จสิ้น / ปิดรายการ)</span>
+                </label>
+
+                <button
+                  type="submit"
+                  className="inline-flex items-center justify-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg transition-colors whitespace-nowrap cursor-pointer"
+                >
+                  <Send size={15} aria-hidden="true" />
+                  <span>ส่งสลิปถึงเมลลูกค้า</span>
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div className="p-4 rounded-xl bg-rose-50/60 border border-rose-200 text-xs text-slate-600">
+              การส่งสลิปโอนเงินคืนถึงอีเมลลูกค้าดำเนินการโดยผู้ดูแลและแอดมินเท่านั้น (บัญชีรับเงินคืน:{' '}
+              {activeReq.resolution.refundBankName} · {activeReq.resolution.refundAccountName})
+            </div>
+          )}
+        </div>
+      )}
+
+      {!isRejected && activeReq.resolution?.type !== 'refund' && (
+        <div className="bg-white border border-rose-100 rounded-xl p-6 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-rose-100 pb-3">
+            <div className="flex items-center gap-2">
+              <Truck size={17} className="text-pink-600" aria-hidden="true" />
+              <h3 className="text-sm font-semibold text-slate-900">
+                เลขพัสดุส่งคืนของลูกค้า (กรอกเลขพัสดุของลูกค้าเอง)
+              </h3>
+            </div>
+            {activeReq.customerReturnTracking && (
+              <span className="text-xs font-mono font-semibold text-pink-700">
+                บันทึกแล้ว: {activeReq.customerReturnTracking} ({activeReq.customerReturnCarrier || 'ขนส่งทั่วไป'})
+              </span>
+            )}
+          </div>
+
+          <form onSubmit={handleSaveParcel} className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+            <div className="space-y-1.5">
+              <label htmlFor="cust-return-track" className="block text-xs font-medium text-slate-700">
+                เลขที่พัสดุที่ลูกค้าจัดส่งคืน *
+              </label>
+              <input
+                id="cust-return-track"
+                type="text"
+                required
+                value={returnParcelInput}
+                onChange={(e) => setReturnParcelInput(e.target.value)}
+                placeholder="กรอกเลขพัสดุของลูกค้าเอง เช่น TH0123456789"
+                className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg font-mono focus:border-pink-500"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label htmlFor="cust-return-carrier" className="block text-xs font-medium text-slate-700">
+                บริษัทขนส่งที่ใช้ส่งคืน
+              </label>
+              <select
+                id="cust-return-carrier"
+                value={returnCarrierInput}
+                onChange={(e) => setReturnCarrierInput(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg bg-white focus:border-pink-500"
+              >
+                {CUSTOMER_CARRIERS.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white text-sm font-semibold rounded-lg shadow-xs shadow-pink-500/20 transition-all whitespace-nowrap cursor-pointer"
+            >
+              <PackageCheck size={16} aria-hidden="true" />
+              <span>
+                {activeReq.customerReturnTracking
+                  ? 'อัปเดตเลขพัสดุส่งคืน'
+                  : 'บันทึกเลขพัสดุส่งคืน'}
+              </span>
+            </button>
+          </form>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="bg-white border border-rose-100 rounded-xl p-6 space-y-4">
+          <h3 className="text-base font-semibold text-slate-900">ข้อมูลสินค้าที่ส่งคืน</h3>
+          <div className="aspect-[4/3] w-full rounded-lg overflow-hidden border border-rose-200 bg-rose-50">
+            <ResilientImage src={activeReq.imageUrl} alt={activeReq.productName} />
+          </div>
+          <div className="space-y-2 text-sm">
+            <p className="font-semibold text-slate-900">{activeReq.productName}</p>
+            <p className="text-xs font-mono text-slate-500">
+              {activeReq.sku} · จำนวน {activeReq.qty} ชิ้น · มูลค่า {formatCurrency(activeReq.unitPrice * activeReq.qty)}
+            </p>
+            <div className="pt-3 border-t border-rose-100 space-y-1">
+              <p className="text-xs font-medium text-slate-500">สาเหตุการคืน</p>
+              <p className="text-sm font-medium text-slate-800">{activeReq.reason}</p>
+              <p className="text-xs text-slate-600 leading-relaxed">{activeReq.detail}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="lg:col-span-2 bg-white border border-rose-100 rounded-xl p-6 space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                <MapPin size={16} className="text-pink-600" aria-hidden="true" />
+                <span>ข้อมูลคลังสินค้าและการรับเข้า</span>
+              </div>
+              <dl className="space-y-1.5 text-sm pt-2">
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">รหัสคลังสินค้า</dt>
+                  <dd className="font-mono font-medium text-slate-900">{activeReq.warehouseId}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">ตำแหน่งจัดเก็บ (Bin/Rack)</dt>
+                  <dd className="font-mono font-medium text-slate-900">{activeReq.locationBin}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">วันเวลารับเข้าคลัง</dt>
+                  <dd className="font-mono text-slate-800">
+                    {activeReq.receivedDate || 'รอรับสินค้าเข้าคลัง'}
+                  </dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">ระยะเวลาค้างดำเนินการ</dt>
+                  <dd className="font-mono tabular-nums font-medium text-slate-900">
+                    {activeReq.agingDays} วัน
+                  </dd>
+                </div>
+              </dl>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                <ShieldCheck size={16} className="text-rose-600" aria-hidden="true" />
+                <span>ผลการตรวจสภาพสินค้า (Inspection)</span>
+              </div>
+              {activeReq.inspection ? (
+                <dl className="space-y-1.5 text-sm pt-2">
+                  <div className="flex justify-between">
+                    <dt className="text-slate-500">ผู้ตรวจสอบ</dt>
+                    <dd className="font-medium text-slate-900">
+                      {activeReq.inspection.inspectorName}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt className="text-slate-500">เกรดสภาพสินค้า</dt>
+                    <dd className="font-medium text-slate-900">{activeReq.inspection.grade}</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt className="text-slate-500">แนวทางจัดการ (Disposition)</dt>
+                    <dd className="font-semibold text-pink-700">
+                      {activeReq.inspection.disposition}
+                    </dd>
+                  </div>
+                  <div className="pt-2 border-t border-rose-100">
+                    <dt className="text-xs text-slate-500">หมายเหตุผู้ตรวจ</dt>
+                    <dd className="text-xs text-slate-700 mt-0.5 leading-relaxed">
+                      {activeReq.inspection.notes}
+                    </dd>
+                  </div>
+                </dl>
+              ) : (
+                <div className="mt-2 p-4 rounded-lg bg-rose-50/60 border border-rose-200 text-xs text-slate-500 leading-relaxed">
+                  สินค้ายังอยู่ระหว่างรอรับเข้าคลังหรือรอคิวจากแผนกตรวจสอบสภาพสินค้า
+                </div>
+              )}
+            </div>
+          </div>
+
+          {activeReq.resolution && (
+            <div className="pt-5 border-t border-rose-100 space-y-3">
+              <h3 className="text-sm font-semibold text-slate-900">
+                ความประสงค์ของลูกค้า (จัดส่งสินค้าใหม่ / ขอรับเงินคืน)
+              </h3>
+              <div className="p-4 rounded-lg bg-rose-50/60 border border-rose-200 text-xs space-y-1.5">
+                <p className="font-semibold text-rose-950">
+                  {activeReq.resolution.type === 'reship'
+                    ? 'ต้องการจัดส่งสินค้าให้ใหม่'
+                    : 'ต้องการขอรับเงินคืน'}
+                </p>
+                {activeReq.resolution.type === 'reship' ? (
+                  <div className="text-slate-600 space-y-0.5">
+                    <p>
+                      ผู้รับ: <span className="font-medium text-slate-800">{activeReq.resolution.reshipName}</span> · โทร{' '}
+                      <span className="font-mono text-slate-800">{activeReq.resolution.reshipPhone}</span>
+                    </p>
+                    <p>ที่อยู่จัดส่ง: {activeReq.resolution.reshipAddress}</p>
+                  </div>
+                ) : (
+                  <div className="text-slate-600 space-y-0.5">
+                    <p>ธนาคาร: {activeReq.resolution.refundBankName}</p>
+                    <p>
+                      ชื่อบัญชี: <span className="font-medium text-slate-800">{activeReq.resolution.refundAccountName}</span> · เลขที่บัญชี:{' '}
+                      <span className="font-mono font-semibold text-slate-900">{activeReq.resolution.refundAccountNumber}</span>
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeReq.outboundDispatch && (
+            <div className="pt-5 border-t border-rose-100 space-y-3">
+              <h3 className="text-sm font-semibold text-slate-900">
+                ข้อมูลการจัดส่งพัสดุถึงลูกค้า (Outbound Dispatch)
+              </h3>
+              <div className="p-4 rounded-lg bg-pink-50/70 border border-pink-200 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <span className="text-slate-500 block">เลขที่พัสดุ (Tracking Number)</span>
+                  <span className="font-mono font-bold text-pink-700 text-sm">
+                    {activeReq.outboundDispatch.trackingNumber}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block">ชื่อสินค้าที่จัดส่ง</span>
+                  <span className="font-semibold text-slate-900 text-sm">
+                    {activeReq.outboundDispatch.productName}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-500">บริษัทขนส่ง: </span>
+                  <span className="font-medium text-slate-800">
+                    {activeReq.outboundDispatch.carrier}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-500">จัดส่งเมื่อ: </span>
+                  <span className="font-mono text-slate-800">
+                    {activeReq.outboundDispatch.shippedAt} โดย {activeReq.outboundDispatch.shippedBy}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="pt-5 border-t border-rose-100 space-y-4">
+            <h3 className="text-sm font-semibold text-slate-900">
+              ประวัติการดำเนินการ (Timeline &amp; Audit Log)
+            </h3>
+            {activeReq.timeline.length === 0 ? (
+              <p className="text-xs text-slate-500">ยังไม่มีประวัติการบันทึก</p>
+            ) : (
+              <ol className="divide-y divide-rose-100 border border-rose-200 rounded-lg bg-rose-50/40">
+                {activeReq.timeline.map((entry, idx) => (
+                  <li
+                    key={`${entry.status}-${idx}`}
+                    className="px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5"
+                  >
+                    <div className="space-y-0.5">
+                      <p className="text-xs font-semibold text-slate-900">{entry.status}</p>
+                      <p className="text-xs text-slate-600">
+                        ผู้ดำเนินการ: <span className="font-medium text-slate-800">{entry.actor}</span> — {entry.note}
+                      </p>
+                    </div>
+                    <span className="text-xs font-mono text-slate-500 tabular-nums shrink-0">
+                      {entry.date}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+
+          <div className="pt-4 border-t border-rose-100 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
+            <span>
+              ข้อมูลติดต่อผู้ยื่นคำร้อง: {activeReq.customerPhone} ·{' '}
+              {activeReq.customerEmail || 'ไม่ระบุอีเมล'}
+            </span>
+            <span className="font-mono">
+              ติดต่อผู้ดูแลระบบ: LINE {siteConfig.supportLineId} · โทร{' '}
+              {siteConfig.supportPhone} · วันที่ซื้อ {activeReq.purchaseDate}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
