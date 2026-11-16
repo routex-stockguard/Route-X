@@ -1,0 +1,211 @@
+import React, { useState } from 'react';
+import { ArrowRight, Eye, EyeOff, Lock, Truck, User } from 'lucide-react';
+import { SiteConfig } from '../types';
+
+interface AuthPortalProps {
+  siteConfig: SiteConfig;
+  onStaffLogin: (employeeId: string, password: string) => string | null;
+  onCustomerEnter: () => void;
+}
+
+export function AuthPortal({
+  siteConfig,
+  onStaffLogin,
+  onCustomerEnter,
+}: AuthPortalProps) {
+  const [showStaffForm, setShowStaffForm] = useState(false);
+  const [showEmployeeId, setShowEmployeeId] = useState(false);
+  const [employeeId, setEmployeeId] = useState('');
+  const [password, setPassword] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const err = onStaffLogin(employeeId.trim(), password);
+    if (err) {
+      setErrorMsg(err);
+    } else {
+      setErrorMsg('');
+    }
+  };
+
+  const loginDetails = siteConfig.customDetails.filter(
+    (d) => d.placement === 'login'
+  );
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-white via-rose-50/80 to-pink-100/60 text-slate-900 flex flex-col justify-between px-4 py-8 sm:px-8">
+      <header className="max-w-5xl mx-auto w-full flex items-center justify-between border-b border-rose-200/80 pb-5">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-pink-500 to-rose-500 text-white flex items-center justify-center shrink-0 shadow-sm shadow-pink-500/20">
+            <Truck size={18} aria-hidden="true" />
+          </div>
+          <span className="text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap">
+            {siteConfig.brandName}
+          </span>
+        </div>
+        <span className="text-xs font-mono text-rose-700/80 whitespace-nowrap">
+          {siteConfig.systemSubtitle}
+        </span>
+      </header>
+
+      <main className="w-full max-w-md mx-auto my-auto py-10 space-y-5">
+        <div className="bg-white border border-rose-200/80 rounded-2xl p-6 sm:p-8 space-y-6 shadow-lg shadow-pink-500/5">
+          <div className="text-center space-y-1.5">
+            <h1 className="text-2xl font-bold text-slate-900">
+              {siteConfig.loginTitle}
+            </h1>
+            <p className="text-xs text-slate-500">
+              {siteConfig.loginDescription}
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <p className="text-xs text-slate-500 text-center">
+              สำหรับลูกค้าทั่วไป
+            </p>
+            <button
+              type="button"
+              onClick={onCustomerEnter}
+              className="w-full py-2.5 px-4 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white text-sm font-semibold rounded-lg shadow-sm shadow-pink-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <User size={16} aria-hidden="true" />
+              <span>เข้าสู่ระบบลูกค้า (ยื่นคำร้อง / ติดตามสถานะ)</span>
+            </button>
+            <p className="text-xs text-slate-500 text-center">
+              ติดต่อผู้ดูแลระบบ (ลูกค้า):{' '}
+              <span className="font-mono font-semibold text-pink-600">
+                LINE {siteConfig.supportLineId}
+              </span>
+              {' · '}
+              <a
+                href={`tel:${siteConfig.supportPhone}`}
+                className="font-mono font-semibold text-pink-600 hover:underline"
+              >
+                โทร {siteConfig.supportPhone}
+              </a>
+            </p>
+          </div>
+
+          <div className="pt-5 border-t border-rose-100 space-y-4">
+            {!showStaffForm ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowStaffForm(true);
+                  setErrorMsg('');
+                }}
+                className="w-full py-2.5 px-4 bg-rose-50 hover:bg-rose-100 text-rose-700 text-sm font-semibold rounded-lg border border-rose-200 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Lock size={15} className="text-pink-600" aria-hidden="true" />
+                <span>เข้าสู่ระบบพนักงาน</span>
+              </button>
+            ) : (
+              <form onSubmit={handleSubmit} autoComplete="off" className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-pink-700 text-sm font-semibold">
+                    <Lock size={15} aria-hidden="true" />
+                    <span>เข้าสู่ระบบพนักงาน</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowStaffForm(false);
+                      setEmployeeId('');
+                      setPassword('');
+                      setErrorMsg('');
+                      setShowEmployeeId(false);
+                    }}
+                    className="text-xs text-slate-500 hover:text-rose-700 cursor-pointer"
+                  >
+                    ซ่อนฟอร์ม
+                  </button>
+                </div>
+
+                {errorMsg && (
+                  <div
+                    role="alert"
+                    className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs leading-relaxed"
+                  >
+                    {errorMsg}
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <label htmlFor="login-emp-id" className="block text-xs font-medium text-slate-700">
+                    รหัสพนักงาน
+                  </label>
+                  <div className="relative">
+                    <input
+                      id="login-emp-id"
+                      type={showEmployeeId ? 'text' : 'password'}
+                      required
+                      autoComplete="off"
+                      value={employeeId}
+                      onChange={(e) => setEmployeeId(e.target.value)}
+                      placeholder="••••••"
+                      className="w-full pl-3.5 pr-10 py-2.5 bg-rose-50/40 border border-rose-200 rounded-lg text-sm font-mono text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-pink-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowEmployeeId((prev) => !prev)}
+                      aria-label={showEmployeeId ? 'ซ่อนรหัสพนักงาน' : 'แสดงรหัสพนักงาน'}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-pink-600 cursor-pointer"
+                    >
+                      {showEmployeeId ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label htmlFor="login-password" className="block text-xs font-medium text-slate-700">
+                    รหัสผ่าน
+                  </label>
+                  <input
+                    id="login-password"
+                    type="password"
+                    required
+                    autoComplete="new-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••"
+                    className="w-full px-3.5 py-2.5 bg-rose-50/40 border border-rose-200 rounded-lg text-sm font-mono text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-pink-500"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-2.5 px-4 bg-pink-600 hover:bg-pink-700 text-white text-sm font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <span>เข้าสู่ระบบพนักงาน</span>
+                  <ArrowRight size={16} aria-hidden="true" />
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+
+        {loginDetails.length > 0 && (
+          <div className="space-y-3">
+            {loginDetails.map((item) => (
+              <div
+                key={item.id}
+                className="bg-white border border-rose-200/80 rounded-xl p-4 space-y-1 shadow-sm"
+              >
+                <h2 className="text-sm font-semibold text-slate-900">{item.title}</h2>
+                <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-line">
+                  {item.content}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </main>
+
+      <footer className="max-w-5xl mx-auto w-full border-t border-rose-200/80 pt-5 flex items-center justify-between text-xs text-slate-500">
+        <span>{siteConfig.brandName} · {siteConfig.systemSubtitle}</span>
+        <span>© 2026 {siteConfig.brandName}</span>
+      </footer>
+    </div>
+  );
+}

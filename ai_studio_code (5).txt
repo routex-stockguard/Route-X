@@ -1,0 +1,570 @@
+export type Role = 'Admin' | 'Customer' | 'Warehouse Staff' | 'Inspector';
+
+export type TabId =
+  | 'dashboard'
+  | 'requests'
+  | 'new-request'
+  | 'tracking'
+  | 'warehouse'
+  | 'inspection'
+  | 'costs'
+  | 'user-management'
+  | 'site-settings';
+
+export type CustomDetailPlacement = 'customer' | 'all' | 'login';
+
+export interface CustomDetailItem {
+  id: string;
+  title: string;
+  content: string;
+  placement: CustomDetailPlacement;
+}
+
+export interface SiteConfig {
+  brandName: string;
+  systemSubtitle: string;
+  loginTitle: string;
+  loginDescription: string;
+  supportLineId: string;
+  supportPhone: string;
+  supportNote: string;
+  customDetails: CustomDetailItem[];
+}
+
+export type ReturnStatus =
+  | 'รออนุมัติคำขอคืนสินค้า'
+  | 'อนุมัติการคืนสินค้า'
+  | 'รอรับสินค้าคืน'
+  | 'ได้รับสินค้าแล้ว'
+  | 'อยู่ระหว่างตรวจสอบสินค้า'
+  | 'คืนเงิน / เปลี่ยนสินค้า'
+  | 'ตรวจสอบเสร็จสิ้น / ปิดรายการ'
+  | 'ปฏิเสธคำขอคืนสินค้า';
+
+export type ConditionGrade =
+  | 'ปกติ (Normal)'
+  | 'เสียหายเล็กน้อย (Minor Defect)'
+  | 'เสียหายหนัก (Damaged)';
+
+export type DispositionType =
+  | 'นำกลับเข้าสต็อก'
+  | 'ซ่อมแซมเพื่อจำหน่ายต่อ'
+  | 'ส่งคืนซัพพลายเออร์'
+  | 'ตัดจำหน่ายเป็นสินค้าเสียหาย';
+
+export interface StaffUser {
+  employeeId: string;
+  password: string;
+  name: string;
+  role: Exclude<Role, 'Customer'>;
+  level: 1 | 2;
+}
+
+export interface CurrentUser {
+  employeeId?: string;
+  name: string;
+  role: Role;
+  level: 1 | 2 | 0;
+}
+
+export interface TimelineEntry {
+  status: string;
+  date: string;
+  actor: string;
+  note: string;
+}
+
+export interface Product {
+  sku: string;
+  name: string;
+  category: string;
+  price: number;
+  stock: number;
+  imageUrl: string;
+}
+
+export interface WarehouseInfo {
+  id: string;
+  name: string;
+  capacity: number;
+  occupied: number;
+}
+
+export interface InspectionRecord {
+  inspectorName: string;
+  inspectedAt: string;
+  grade: ConditionGrade;
+  damagedValue: number;
+  repairCost: number;
+  notes: string;
+  disposition: DispositionType;
+}
+
+export interface CostBreakdown {
+  freight: number;
+  repair: number;
+  inspectionFee: number;
+  assetLoss: number;
+}
+
+export interface OutboundDispatchRecord {
+  trackingNumber: string;
+  productName: string;
+  carrier: string;
+  shippedAt: string;
+  shippedBy: string;
+}
+
+export interface RefundSlipRecord {
+  sentToEmail: string;
+  amount: number;
+  transferRef: string;
+  slipImageUrl?: string;
+  note?: string;
+  sentAt: string;
+  sentBy: string;
+}
+
+export type ResolutionType = 'reship' | 'refund';
+
+export interface ResolutionDetails {
+  type: ResolutionType;
+  reshipName?: string;
+  reshipAddress?: string;
+  reshipPhone?: string;
+  refundBankName?: string;
+  refundAccountName?: string;
+  refundAccountNumber?: string;
+}
+
+export const THAI_BANKS: string[] = [
+  'ธนาคารกสิกรไทย (KBank)',
+  'ธนาคารไทยพาณิชย์ (SCB)',
+  'ธนาคารกรุงเทพ (BBL)',
+  'ธนาคารกรุงไทย (KTB)',
+  'ธนาคารกรุงศรีอยุธยา (BAY)',
+  'ธนาคารทหารไทยธนชาต (TTB)',
+  'ธนาคารออมสิน (GSB)',
+];
+
+export interface ReturnRequest {
+  id: string;
+  orderNumber: string;
+  customerName: string;
+  customerPhone: string;
+  customerEmail: string;
+  purchaseDate: string;
+  requestDate: string;
+  sku: string;
+  productName: string;
+  qty: number;
+  unitPrice: number;
+  reason: string;
+  detail: string;
+  imageUrl: string;
+  status: ReturnStatus;
+  warehouseId: string;
+  locationBin: string;
+  receivedDate: string;
+  agingDays: number;
+  inspection: InspectionRecord | null;
+  customerReturnTracking?: string;
+  customerReturnCarrier?: string;
+  outboundDispatch?: OutboundDispatchRecord | null;
+  refundSlip?: RefundSlipRecord | null;
+  resolution?: ResolutionDetails | null;
+  costs: CostBreakdown;
+  timeline: TimelineEntry[];
+}
+
+export interface SystemNotification {
+  id: number;
+  requestId?: string;
+  text: string;
+  time: string;
+  type: 'info' | 'warning' | 'success';
+}
+
+export interface ToastMessage {
+  msg: string;
+  type: 'success' | 'info' | 'warning' | 'error';
+}
+
+export const INITIAL_USERS: StaffUser[] = [
+  {
+    employeeId: '000001',
+    password: '000001',
+    name: 'RouteX 001',
+    role: 'Admin',
+    level: 1,
+  },
+  {
+    employeeId: 'WH001',
+    password: '1234',
+    name: 'สมปอง คลังสินค้า',
+    role: 'Warehouse Staff',
+    level: 2,
+  },
+  {
+    employeeId: 'INS001',
+    password: '1234',
+    name: 'วิชัย ตรวจสอบ',
+    role: 'Inspector',
+    level: 2,
+  },
+];
+
+export const GENERATED_IMAGES = {
+  earbuds: '/src/assets/images/product_earbuds_pro_1794725541579.jpg',
+  vacuum: '/src/assets/images/product_robot_vacuum_1794725541708.jpg',
+  chair: '/src/assets/images/product_office_chair_1794725541763.jpg',
+  parcel: '/src/assets/images/return_parcel_inspection_1794725542043.jpg',
+};
+
+export const INITIAL_PRODUCTS: Product[] = [
+  {
+    sku: 'SKU-ELEC-1001',
+    name: 'UltraSmart Wireless Earbuds Pro',
+    category: 'Electronics',
+    price: 2500,
+    stock: 145,
+    imageUrl: GENERATED_IMAGES.earbuds,
+  },
+  {
+    sku: 'SKU-ELEC-2004',
+    name: '4K Smart LED TV 55 Inch',
+    category: 'Electronics',
+    price: 15900,
+    stock: 32,
+    imageUrl: GENERATED_IMAGES.parcel,
+  },
+  {
+    sku: 'SKU-APPL-3002',
+    name: 'Robot Vacuum Cleaner CleanerX',
+    category: 'Appliances',
+    price: 8900,
+    stock: 58,
+    imageUrl: GENERATED_IMAGES.vacuum,
+  },
+  {
+    sku: 'SKU-FASH-4001',
+    name: 'Waterproof Outdoor Hiking Jacket',
+    category: 'Fashion',
+    price: 1850,
+    stock: 210,
+    imageUrl: GENERATED_IMAGES.parcel,
+  },
+  {
+    sku: 'SKU-HOME-5005',
+    name: 'Ergonomic Mesh Office Chair',
+    category: 'Furniture',
+    price: 4200,
+    stock: 74,
+    imageUrl: GENERATED_IMAGES.chair,
+  },
+];
+
+export const INITIAL_WAREHOUSES: WarehouseInfo[] = [
+  { id: 'WH-BKK-01', name: 'Central Distribution Center (Bangkok)', capacity: 10000, occupied: 6800 },
+  { id: 'WH-CNX-02', name: 'Northern Hub (Chiang Mai)', capacity: 4000, occupied: 2100 },
+  { id: 'WH-RAY-03', name: 'Eastern Industrial Hub (Rayong)', capacity: 6000, occupied: 4300 },
+];
+
+export const STATUS_WORKFLOW: ReturnStatus[] = [
+  'รออนุมัติคำขอคืนสินค้า',
+  'อนุมัติการคืนสินค้า',
+  'รอรับสินค้าคืน',
+  'ได้รับสินค้าแล้ว',
+  'อยู่ระหว่างตรวจสอบสินค้า',
+  'คืนเงิน / เปลี่ยนสินค้า',
+  'ตรวจสอบเสร็จสิ้น / ปิดรายการ',
+];
+
+export const STEP_APPROVER_ROLE: Record<ReturnStatus, Exclude<Role, 'Customer'>> = {
+  'รออนุมัติคำขอคืนสินค้า': 'Admin',
+  'อนุมัติการคืนสินค้า': 'Admin',
+  'รอรับสินค้าคืน': 'Admin',
+  'ได้รับสินค้าแล้ว': 'Warehouse Staff',
+  'อยู่ระหว่างตรวจสอบสินค้า': 'Inspector',
+  'คืนเงิน / เปลี่ยนสินค้า': 'Admin',
+  'ตรวจสอบเสร็จสิ้น / ปิดรายการ': 'Admin',
+  'ปฏิเสธคำขอคืนสินค้า': 'Admin',
+};
+
+export const ROLE_THAI_LABELS: Record<Role, string> = {
+  Admin: 'ผู้ดูแลและแอดมิน',
+  'Warehouse Staff': 'พนักงานคลัง',
+  Inspector: 'ฝ่ายตรวจสอบ',
+  Customer: 'ลูกค้า',
+};
+
+export const RETURN_REASONS: string[] = [
+  'สินค้าชำรุดหรือเสียหาย',
+  'ได้รับสินค้าผิดรุ่น',
+  'ได้รับสินค้าไม่ครบ',
+  'สินค้าไม่ตรงกับรายละเอียด',
+  'ลูกค้าเปลี่ยนใจ',
+  'สินค้าหมดอายุ',
+  'ปัญหาจากการขนส่ง',
+  'สาเหตุอื่น ๆ',
+];
+
+export const CONDITION_GRADES: ConditionGrade[] = [
+  'ปกติ (Normal)',
+  'เสียหายเล็กน้อย (Minor Defect)',
+  'เสียหายหนัก (Damaged)',
+];
+
+export const DISPOSITION_OPTIONS: DispositionType[] = [
+  'นำกลับเข้าสต็อก',
+  'ซ่อมแซมเพื่อจำหน่ายต่อ',
+  'ส่งคืนซัพพลายเออร์',
+  'ตัดจำหน่ายเป็นสินค้าเสียหาย',
+];
+
+export const INITIAL_REQUESTS: ReturnRequest[] = [
+  {
+    id: 'RTX-20261110-0001',
+    orderNumber: 'ORD-883921',
+    customerName: 'สมชาย ใจดี',
+    customerPhone: '081-234-5678',
+    customerEmail: 'somchai@email.com',
+    purchaseDate: '2026-11-01',
+    requestDate: '2026-11-10',
+    sku: 'SKU-ELEC-1001',
+    productName: 'UltraSmart Wireless Earbuds Pro',
+    qty: 1,
+    unitPrice: 2500,
+    reason: 'สินค้าชำรุดหรือเสียหาย',
+    detail: 'หูฟังข้างซ้ายไม่มีเสียงเมื่อเปิดใช้งาน และไฟสถานะเคสไม่ติด',
+    imageUrl: GENERATED_IMAGES.earbuds,
+    status: 'อนุมัติการคืนสินค้า',
+    warehouseId: 'WH-BKK-01',
+    locationBin: 'RACK-A12',
+    receivedDate: '',
+    agingDays: 5,
+    inspection: null,
+    costs: { freight: 80, repair: 0, inspectionFee: 50, assetLoss: 0 },
+    timeline: [
+      {
+        status: 'รออนุมัติคำขอคืนสินค้า',
+        date: '2026-11-10 09:15',
+        actor: 'สมชาย ใจดี',
+        note: 'ยื่นคำขอคืนสินค้าผ่านพอร์ทัลลูกค้า',
+      },
+      {
+        status: 'อนุมัติการคืนสินค้า',
+        date: '2026-11-10 11:30',
+        actor: 'RouteX 001',
+        note: 'อนุมัติคำขอคืนสินค้าเรียบร้อย รอรับพัสดุคืน',
+      },
+    ],
+  },
+  {
+    id: 'RTX-20261112-0002',
+    orderNumber: 'ORD-991204',
+    customerName: 'วิภาดา รักษ์ดี',
+    customerPhone: '089-876-5432',
+    customerEmail: 'wiphada@email.com',
+    purchaseDate: '2026-11-05',
+    requestDate: '2026-11-12',
+    sku: 'SKU-APPL-3002',
+    productName: 'Robot Vacuum Cleaner CleanerX',
+    qty: 1,
+    unitPrice: 8900,
+    reason: 'ได้รับสินค้าผิดรุ่น',
+    detail: 'ส่งรุ่นปี 2025 มาให้ แต่สั่งรุ่นปี 2026 สินค้ายังไม่แกะซีล',
+    imageUrl: GENERATED_IMAGES.vacuum,
+    status: 'อยู่ระหว่างตรวจสอบสินค้า',
+    warehouseId: 'WH-BKK-01',
+    locationBin: 'RACK-C04',
+    receivedDate: '2026-11-14 10:30',
+    agingDays: 3,
+    inspection: {
+      inspectorName: 'วิชัย ตรวจสอบ',
+      inspectedAt: '2026-11-14 13:15',
+      grade: 'ปกติ (Normal)',
+      damagedValue: 0,
+      repairCost: 0,
+      notes: 'สินค้าใหม่ในกล่อง อุปกรณ์ครบถ้วน นำกลับเข้าสต็อกได้',
+      disposition: 'นำกลับเข้าสต็อก',
+    },
+    costs: { freight: 120, repair: 0, inspectionFee: 100, assetLoss: 0 },
+    timeline: [
+      {
+        status: 'รออนุมัติคำขอคืนสินค้า',
+        date: '2026-11-12 10:00',
+        actor: 'วิภาดา รักษ์ดี',
+        note: 'สร้างคำร้องขอคืนสินค้า',
+      },
+      {
+        status: 'อนุมัติการคืนสินค้า',
+        date: '2026-11-12 14:20',
+        actor: 'RouteX 001',
+        note: 'อนุมัติคำร้อง',
+      },
+      {
+        status: 'ได้รับสินค้าแล้ว',
+        date: '2026-11-14 10:30',
+        actor: 'สมปอง คลังสินค้า',
+        note: 'รับเข้าคลัง WH-BKK-01 ช่อง RACK-C04',
+      },
+      {
+        status: 'อยู่ระหว่างตรวจสอบสินค้า',
+        date: '2026-11-14 13:15',
+        actor: 'วิชัย ตรวจสอบ',
+        note: 'เริ่มตรวจสอบสภาพสินค้าและอุปกรณ์',
+      },
+    ],
+  },
+  {
+    id: 'RTX-20261108-0003',
+    orderNumber: 'ORD-774102',
+    customerName: 'ณรงค์เดช สุขสวัสดิ์',
+    customerPhone: '086-555-1234',
+    customerEmail: 'narong@email.com',
+    purchaseDate: '2026-10-28',
+    requestDate: '2026-11-08',
+    sku: 'SKU-HOME-5005',
+    productName: 'Ergonomic Mesh Office Chair',
+    qty: 1,
+    unitPrice: 4200,
+    reason: 'ปัญหาจากการขนส่ง',
+    detail: 'พนักพิงหลังแตกหักขณะขนส่ง กล่องด้านนอกมีรอยกระแทก',
+    imageUrl: GENERATED_IMAGES.chair,
+    status: 'ตรวจสอบเสร็จสิ้น / ปิดรายการ',
+    warehouseId: 'WH-RAY-03',
+    locationBin: 'SCRAP-BAY',
+    receivedDate: '2026-11-09 14:15',
+    agingDays: 1,
+    inspection: {
+      inspectorName: 'วิชัย ตรวจสอบ',
+      inspectedAt: '2026-11-10 09:40',
+      grade: 'เสียหายหนัก (Damaged)',
+      damagedValue: 4200,
+      repairCost: 800,
+      notes: 'โครงพลาสติกหัก ไม่คุ้มค่าซ่อมแซม ตัดจำหน่ายซาก',
+      disposition: 'ตัดจำหน่ายเป็นสินค้าเสียหาย',
+    },
+    costs: { freight: 250, repair: 0, inspectionFee: 150, assetLoss: 4200 },
+    timeline: [
+      {
+        status: 'รออนุมัติคำขอคืนสินค้า',
+        date: '2026-11-08 11:05',
+        actor: 'ณรงค์เดช สุขสวัสดิ์',
+        note: 'ยื่นคำร้องสินค้าชำรุดจากขนส่ง',
+      },
+      {
+        status: 'อนุมัติการคืนสินค้า',
+        date: '2026-11-08 15:00',
+        actor: 'RouteX 001',
+        note: 'อนุมัติรับคืนเพื่อตรวจสอบ',
+      },
+      {
+        status: 'ได้รับสินค้าแล้ว',
+        date: '2026-11-09 14:15',
+        actor: 'สมปอง คลังสินค้า',
+        note: 'รับเข้าคลัง WH-RAY-03 ช่อง SCRAP-BAY',
+      },
+      {
+        status: 'ตรวจสอบเสร็จสิ้น / ปิดรายการ',
+        date: '2026-11-10 09:40',
+        actor: 'วิชัย ตรวจสอบ',
+        note: 'ประเมินเสียหายหนัก ตัดจำหน่ายซากและปิดรายการ',
+      },
+    ],
+  },
+  {
+    id: 'RTX-20261113-0004',
+    orderNumber: 'ORD-994510',
+    customerName: 'กัญญาณี พงศ์ไพบูลย์',
+    customerPhone: '092-418-7790',
+    customerEmail: 'kanyanee@email.com',
+    purchaseDate: '2026-11-09',
+    requestDate: '2026-11-13',
+    sku: 'SKU-ELEC-2004',
+    productName: '4K Smart LED TV 55 Inch',
+    qty: 1,
+    unitPrice: 15900,
+    reason: 'สินค้าไม่ตรงกับรายละเอียด',
+    detail: 'ลูกค้าต้องการเปลี่ยนเป็นรุ่น 65 นิ้ว พัสดุยังไม่ได้เปิดกล่อง',
+    imageUrl: GENERATED_IMAGES.parcel,
+    status: 'รออนุมัติคำขอคืนสินค้า',
+    warehouseId: 'WH-CNX-02',
+    locationBin: 'PENDING-BIN',
+    receivedDate: '',
+    agingDays: 2,
+    inspection: null,
+    costs: { freight: 320, repair: 0, inspectionFee: 120, assetLoss: 0 },
+    timeline: [
+      {
+        status: 'รออนุมัติคำขอคืนสินค้า',
+        date: '2026-11-13 16:20',
+        actor: 'กัญญาณี พงศ์ไพบูลย์',
+        note: 'ยื่นคำร้องขอคืน/เปลี่ยนรุ่นสินค้า',
+      },
+    ],
+  },
+  {
+    id: 'RTX-20261111-0005',
+    orderNumber: 'ORD-988112',
+    customerName: 'ธนากร มั่นคง',
+    customerPhone: '084-332-9910',
+    customerEmail: 'thanakorn@email.com',
+    purchaseDate: '2026-11-03',
+    requestDate: '2026-11-11',
+    sku: 'SKU-APPL-3002',
+    productName: 'Robot Vacuum Cleaner CleanerX',
+    qty: 1,
+    unitPrice: 8900,
+    reason: 'สินค้าชำรุดหรือเสียหาย',
+    detail: 'เซ็นเซอร์กันตกไม่ทำงานหลังใช้งาน 2 วัน ต้องการส่งตรวจซ่อม/เปลี่ยนเครื่อง',
+    imageUrl: GENERATED_IMAGES.vacuum,
+    status: 'ได้รับสินค้าแล้ว',
+    warehouseId: 'WH-BKK-01',
+    locationBin: 'RACK-B07',
+    receivedDate: '2026-11-13 16:45',
+    agingDays: 4,
+    inspection: null,
+    costs: { freight: 120, repair: 450, inspectionFee: 100, assetLoss: 0 },
+    timeline: [
+      {
+        status: 'รออนุมัติคำขอคืนสินค้า',
+        date: '2026-11-11 08:40',
+        actor: 'ธนากร มั่นคง',
+        note: 'ยื่นคำร้องแจ้งปัญหาเซ็นเซอร์',
+      },
+      {
+        status: 'อนุมัติการคืนสินค้า',
+        date: '2026-11-11 10:15',
+        actor: 'RouteX 001',
+        note: 'อนุมัติการส่งคืนตรวจซ่อม',
+      },
+      {
+        status: 'ได้รับสินค้าแล้ว',
+        date: '2026-11-13 16:45',
+        actor: 'สมปอง คลังสินค้า',
+        note: 'รับเข้าคลัง WH-BKK-01 ช่อง RACK-B07',
+      },
+    ],
+  },
+];
+
+export const INITIAL_SITE_CONFIG: SiteConfig = {
+  brandName: 'ROUTEX',
+  systemSubtitle: 'Return Management System',
+  loginTitle: 'เข้าสู่ระบบ RouteX',
+  loginDescription: 'เลือกเข้าสู่ระบบสำหรับพนักงาน หรือเข้าสู่พอร์ทัลสำหรับลูกค้า',
+  supportLineId: '140525455',
+  supportPhone: '0639569177',
+  supportNote: '',
+  customDetails: [],
+};
+
+export function formatCurrency(amount: number): string {
+  return `฿${amount.toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+}
+
+export function getTotalRequestCost(req: ReturnRequest): number {
+  return req.costs.freight + req.costs.repair + req.costs.inspectionFee + req.costs.assetLoss;
+}
