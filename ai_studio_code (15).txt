@@ -1,0 +1,456 @@
+import React, { useEffect, useState } from 'react';
+import { CheckCircle2, ShieldCheck } from 'lucide-react';
+import {
+  CONDITION_GRADES,
+  ConditionGrade,
+  DISPOSITION_OPTIONS,
+  DispositionType,
+  formatCurrency,
+  InspectionRecord,
+  ReturnRequest,
+  ReturnStatus,
+  Role,
+} from '../types';
+import { ResilientImage, StatusIndicator } from './StatusText';
+
+interface InspectionViewProps {
+  requests: ReturnRequest[];
+  activeRole: Role;
+  onUpdateStatus: (id: string, nextStatus: ReturnStatus) => void;
+  onCompleteInspection: (requestId: string, record: InspectionRecord) => void;
+}
+
+export function InspectionView({
+  requests,
+  activeRole,
+  onUpdateStatus,
+  onCompleteInspection,
+}: InspectionViewProps) {
+  const inspectionQueue = requests.filter(
+    (r) =>
+      r.status === 'ได้รับสินค้าแล้ว' ||
+      r.status === 'อยู่ระหว่างตรวจสอบสินค้า'
+  );
+
+  const completedList = requests.filter((r) => r.inspection !== null);
+
+  const [selectedId, setSelectedId] = useState<string>(inspectionQueue[0]?.id || '');
+
+  useEffect(() => {
+    if (!inspectionQueue.some((r) => r.id === selectedId)) {
+      setSelectedId(inspectionQueue[0]?.id || '');
+    }
+  }, [inspectionQueue, selectedId]);
+
+  const activeItem = inspectionQueue.find((r) => r.id === selectedId) || null;
+
+  const [inspectorName, setInspectorName] = useState('วิศวกร ชาญชัย');
+  const [grade, setGrade] = useState<ConditionGrade>('ปกติ (Normal)');
+  const [damagedValue, setDamagedValue] = useState<number>(0);
+  const [repairCost, setRepairCost] = useState<number>(0);
+  const [disposition, setDisposition] = useState<DispositionType>('นำกลับเข้าสต็อก');
+  const [notes, setNotes] = useState('');
+
+  useEffect(() => {
+    if (activeItem?.inspection) {
+      setInspectorName(activeItem.inspection.inspectorName);
+      setGrade(activeItem.inspection.grade);
+      setDamagedValue(activeItem.inspection.damagedValue);
+      setRepairCost(activeItem.inspection.repairCost);
+      setDisposition(activeItem.inspection.disposition);
+      setNotes(activeItem.inspection.notes);
+    } else if (activeItem) {
+      setGrade('ปกติ (Normal)');
+      setDamagedValue(0);
+      setRepairCost(0);
+      setDisposition('นำกลับเข้าสต็อก');
+      setNotes('');
+    }
+  }, [activeItem?.id]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeItem) return;
+    const nowStr = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    onCompleteInspection(activeItem.id, {
+      inspectorName: inspectorName.trim() || 'เจ้าหน้าที่ตรวจสอบ',
+      inspectedAt: nowStr,
+      grade,
+      damagedValue: Math.max(0, damagedValue),
+      repairCost: Math.max(0, repairCost),
+      disposition,
+      notes: notes.trim() || 'บันทึกผลการตรวจสภาพเรียบร้อย',
+    });
+  };
+
+  return (
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900">
+          ศูนย์ตรวจสอบสภาพสินค้า (Quality Inspection Center)
+        </h1>
+        <p className="text-sm text-slate-500 mt-1">
+          ประเมินเกรดความเสียหาย คำนวณค่าซ่อมแซม และกำหนดแนวทางการจัดการสินค้าคืน (Disposition)
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        <div className="bg-white border border-rose-100 rounded-xl overflow-hidden">
+          <div className="px-5 py-4 border-b border-rose-100 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-900">คิวรอตรวจสภาพสินค้า</h2>
+            <span className="text-xs font-mono text-slate-500 tabular-nums">
+              {inspectionQueue.length} รายการ
+            </span>
+          </div>
+
+          {inspectionQueue.length === 0 ? (
+            <div className="p-8 text-center text-xs text-slate-500">
+              ไม่มีสินค้าค้างตรวจสภาพในขณะนี้
+            </div>
+          ) : (
+            <div className="divide-y divide-rose-100/70">
+              {inspectionQueue.map((req) => {
+                const isSelected = req.id === activeItem?.id;
+                return (
+                  <button
+                    key={req.id}
+                    type="button"
+                    onClick={() => setSelectedId(req.id)}
+                    className={`w-full text-left p-4 transition-colors cursor-pointer ${
+                      isSelected ? 'bg-pink-50/80 ring-1 ring-inset ring-pink-200' : 'hover:bg-rose-50/50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono text-xs font-bold text-slate-900">
+                        {req.id}
+                      </span>
+                      <span className="text-xs font-mono text-slate-500">
+                        {req.locationBin}
+                      </span>
+                    </div>
+                    <p className="text-sm font-medium text-slate-800 mt-1 truncate">
+                      {req.productName}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-0.5 truncate">{req.reason}</p>
+                    <div className="mt-2">
+                      <StatusIndicator status={req.status} />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="lg:col-span-2 bg-white border border-rose-100 rounded-xl p-6">
+          {!activeItem ? (
+            <div className="py-12 text-center space-y-2">
+              <ShieldCheck size={36} className="mx-auto text-rose-300" aria-hidden="true" />
+              <p className="text-sm font-medium text-slate-700">
+                เลือกคำร้องจากรายการด้านซ้ายเพื่อเริ่มการตรวจสอบสภาพ
+              </p>
+            </div>
+          ) : activeItem.status === 'ได้รับสินค้าแล้ว' ? (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row gap-4 border-b border-rose-100 pb-5">
+                <div className="w-28 h-24 rounded-lg overflow-hidden border border-rose-200 shrink-0 bg-rose-50">
+                  <ResilientImage src={activeItem.imageUrl} alt={activeItem.productName} />
+                </div>
+                <div className="space-y-1 flex-1">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-mono text-sm font-bold text-slate-900">
+                      {activeItem.id}
+                    </span>
+                    <StatusIndicator status={activeItem.status} />
+                  </div>
+                  <p className="text-base font-semibold text-slate-900">{activeItem.productName}</p>
+                  <p className="text-xs text-slate-600">
+                    <span className="font-medium">สาเหตุจากลูกค้า:</span> {activeItem.reason} — {activeItem.detail}
+                  </p>
+                  <p className="text-xs font-mono text-slate-500">
+                    คลัง {activeItem.warehouseId} · {activeItem.locationBin} · รับเข้าเมื่อ {activeItem.receivedDate || 'ล่าสุด'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-5 rounded-xl bg-rose-50/70 border border-rose-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1 text-xs">
+                  <p className="font-semibold text-rose-950 text-sm">
+                    ขั้นตอนถัดไป: อนุมัติขั้นตอน "อยู่ระหว่างตรวจสอบสินค้า"
+                  </p>
+                  <p className="text-slate-600">
+                    ฝ่ายตรวจสอบต้องอนุมัติรับเข้าขั้นตอน "อยู่ระหว่างตรวจสอบสินค้า" ก่อนจึงจะบันทึกผลประเมินสภาพสินค้าได้
+                  </p>
+                </div>
+                {activeRole === 'Inspector' ? (
+                  <button
+                    type="button"
+                    onClick={() => onUpdateStatus(activeItem.id, 'อยู่ระหว่างตรวจสอบสินค้า')}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white text-xs font-semibold rounded-lg shadow-xs shadow-pink-500/20 whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    <CheckCircle2 size={15} aria-hidden="true" />
+                    <span>อนุมัติขั้นตอน: อยู่ระหว่างตรวจสอบสินค้า</span>
+                  </button>
+                ) : (
+                  <span className="px-3 py-1.5 rounded-lg bg-white border border-rose-200 text-xs font-medium text-rose-800 whitespace-nowrap shrink-0">
+                    รอฝ่ายตรวจสอบอนุมัติขั้นตอน
+                  </span>
+                )}
+              </div>
+            </div>
+          ) : activeRole !== 'Inspector' ? (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row gap-4 border-b border-rose-100 pb-5">
+                <div className="w-28 h-24 rounded-lg overflow-hidden border border-rose-200 shrink-0 bg-rose-50">
+                  <ResilientImage src={activeItem.imageUrl} alt={activeItem.productName} />
+                </div>
+                <div className="space-y-1 flex-1">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-mono text-sm font-bold text-slate-900">
+                      {activeItem.id}
+                    </span>
+                    <StatusIndicator status={activeItem.status} />
+                  </div>
+                  <p className="text-base font-semibold text-slate-900">{activeItem.productName}</p>
+                  <p className="text-xs text-slate-600">
+                    <span className="font-medium">สาเหตุจากลูกค้า:</span> {activeItem.reason} — {activeItem.detail}
+                  </p>
+                  <p className="text-xs font-mono text-slate-500">
+                    คลัง {activeItem.warehouseId} · {activeItem.locationBin} · รับเข้าเมื่อ {activeItem.receivedDate || 'ล่าสุด'}
+                  </p>
+                </div>
+              </div>
+
+              {activeItem.inspection ? (
+                <div className="p-5 rounded-xl bg-emerald-50/60 border border-emerald-200 space-y-4">
+                  <div className="space-y-1 text-xs">
+                    <p className="text-sm font-semibold text-emerald-950">
+                      ฝ่ายตรวจสอบบันทึกผลตรวจสภาพสินค้าแล้ว ({activeItem.inspection.grade})
+                    </p>
+                    <p className="text-slate-700">
+                      แนวทางจัดการ: <span className="font-semibold">{activeItem.inspection.disposition}</span> ·{' '}
+                      หมายเหตุ: {activeItem.inspection.notes}
+                    </p>
+                  </div>
+                  {activeRole === 'Admin' && (
+                    <button
+                      type="button"
+                      onClick={() => onUpdateStatus(activeItem.id, 'คืนเงิน / เปลี่ยนสินค้า')}
+                      className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                    >
+                      <CheckCircle2 size={15} aria-hidden="true" />
+                      <span>อนุมัติขั้นตอน: คืนเงิน / เปลี่ยนสินค้า</span>
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="p-5 rounded-xl bg-rose-50/70 border border-rose-200 text-xs text-rose-900">
+                  ขณะนี้อยู่ระหว่างการตรวจสภาพสินค้าโดยฝ่ายตรวจสอบ (รอฝ่ายตรวจสอบบันทึกผลประเมินสภาพสินค้า)
+                </div>
+              )}
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="flex flex-col sm:flex-row gap-4 border-b border-rose-100 pb-5">
+                <div className="w-28 h-24 rounded-lg overflow-hidden border border-rose-200 shrink-0 bg-rose-50">
+                  <ResilientImage src={activeItem.imageUrl} alt={activeItem.productName} />
+                </div>
+                <div className="space-y-1 flex-1">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-mono text-sm font-bold text-slate-900">
+                      {activeItem.id}
+                    </span>
+                    <span className="font-mono text-sm font-semibold text-pink-700 tabular-nums">
+                      มูลค่าสินค้า {formatCurrency(activeItem.unitPrice * activeItem.qty)}
+                    </span>
+                  </div>
+                  <p className="text-base font-semibold text-slate-900">{activeItem.productName}</p>
+                  <p className="text-xs text-slate-600">
+                    <span className="font-medium">สาเหตุจากลูกค้า:</span> {activeItem.reason} — {activeItem.detail}
+                  </p>
+                  <p className="text-xs font-mono text-slate-500">
+                    คลัง {activeItem.warehouseId} · {activeItem.locationBin} · รับเข้าเมื่อ {activeItem.receivedDate || 'ล่าสุด'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label htmlFor="insp-name" className="block text-xs font-medium text-slate-700">
+                    ชื่อผู้ตรวจสภาพสินค้า
+                  </label>
+                  <input
+                    id="insp-name"
+                    type="text"
+                    required
+                    value={inspectorName}
+                    onChange={(e) => setInspectorName(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg focus:border-pink-500"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label htmlFor="insp-grade" className="block text-xs font-medium text-slate-700">
+                    ผลการประเมินสภาพ (Grade)
+                  </label>
+                  <select
+                    id="insp-grade"
+                    value={grade}
+                    onChange={(e) => {
+                      const nextGrade = e.target.value as ConditionGrade;
+                      setGrade(nextGrade);
+                      if (nextGrade === 'ปกติ (Normal)') {
+                        setDamagedValue(0);
+                        setRepairCost(0);
+                        setDisposition('นำกลับเข้าสต็อก');
+                      } else if (nextGrade === 'เสียหายเล็กน้อย (Minor Defect)') {
+                        setDamagedValue(Math.round(activeItem.unitPrice * 0.2));
+                        setRepairCost(Math.round(activeItem.unitPrice * 0.1));
+                        setDisposition('ซ่อมแซมเพื่อจำหน่ายต่อ');
+                      } else {
+                        setDamagedValue(activeItem.unitPrice * activeItem.qty);
+                        setRepairCost(0);
+                        setDisposition('ตัดจำหน่ายเป็นสินค้าเสียหาย');
+                      }
+                    }}
+                    className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg bg-white focus:border-pink-500"
+                  >
+                    {CONDITION_GRADES.map((g) => (
+                      <option key={g} value={g}>
+                        {g}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label htmlFor="insp-damaged" className="block text-xs font-medium text-slate-700">
+                    มูลค่าความเสียหาย / Asset Loss (บาท)
+                  </label>
+                  <input
+                    id="insp-damaged"
+                    type="number"
+                    min={0}
+                    value={damagedValue}
+                    onChange={(e) => setDamagedValue(Number(e.target.value) || 0)}
+                    className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg font-mono tabular-nums focus:border-pink-500"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label htmlFor="insp-repair" className="block text-xs font-medium text-slate-700">
+                    ประมาณการค่าซ่อมแซม (บาท)
+                  </label>
+                  <input
+                    id="insp-repair"
+                    type="number"
+                    min={0}
+                    value={repairCost}
+                    onChange={(e) => setRepairCost(Number(e.target.value) || 0)}
+                    className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg font-mono tabular-nums focus:border-pink-500"
+                  />
+                </div>
+
+                <div className="sm:col-span-2 space-y-1.5">
+                  <label htmlFor="insp-disp" className="block text-xs font-medium text-slate-700">
+                    แนวทางการจัดการสินค้า (Disposition)
+                  </label>
+                  <select
+                    id="insp-disp"
+                    value={disposition}
+                    onChange={(e) => setDisposition(e.target.value as DispositionType)}
+                    className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg bg-white focus:border-pink-500"
+                  >
+                    {DISPOSITION_OPTIONS.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="sm:col-span-2 space-y-1.5">
+                  <label htmlFor="insp-notes" className="block text-xs font-medium text-slate-700">
+                    บันทึกผลการตรวจสอบทางเทคนิค
+                  </label>
+                  <textarea
+                    id="insp-notes"
+                    rows={3}
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="ระบุอาการที่ตรวจพบ สภาพบรรจุภัณฑ์ และคำแนะนำการคืนเงิน/เปลี่ยนสินค้า..."
+                    className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg focus:border-pink-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-t border-rose-100">
+                <p className="text-xs text-slate-500">
+                  หลังบันทึกผลตรวจแล้ว ผู้ดูแลและแอดมินจะเป็นผู้อนุมัติขั้นตอนคืนเงิน / เปลี่ยนสินค้า และปิดรายการ
+                </p>
+
+                <button
+                  type="submit"
+                  className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white text-sm font-semibold rounded-lg shadow-sm shadow-pink-500/20 transition-all cursor-pointer"
+                >
+                  <CheckCircle2 size={16} aria-hidden="true" />
+                  <span>บันทึกผลตรวจสภาพสินค้า</span>
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-white border border-rose-100 rounded-xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-rose-100 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-slate-900">ประวัติการตรวจสภาพสินค้าแล้ว</h2>
+          <span className="text-xs font-mono text-slate-500 tabular-nums">
+            {completedList.length} รายการ
+          </span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="bg-rose-50/70 text-xs text-rose-900/70 border-b border-rose-100">
+              <tr>
+                <th className="py-3 px-4 font-medium">รหัสคำร้อง</th>
+                <th className="py-3 px-4 font-medium">สินค้า</th>
+                <th className="py-3 px-4 font-medium">ผู้ตรวจ &amp; เกรด</th>
+                <th className="py-3 px-4 font-medium">Disposition</th>
+                <th className="py-3 px-4 font-medium text-right">ความเสียหาย + ซ่อม</th>
+                <th className="py-3 px-4 font-medium">สถานะ</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-rose-100/70">
+              {completedList.map((req) => (
+                <tr key={req.id} className="hover:bg-rose-50/40">
+                  <td className="py-3 px-4 font-mono text-xs font-semibold text-slate-900">
+                    {req.id}
+                  </td>
+                  <td className="py-3 px-4 text-slate-800">{req.productName}</td>
+                  <td className="py-3 px-4">
+                    <div className="text-xs font-medium text-slate-900">
+                      {req.inspection?.inspectorName}
+                    </div>
+                    <div className="text-xs text-slate-500">{req.inspection?.grade}</div>
+                  </td>
+                  <td className="py-3 px-4 text-xs font-medium text-pink-700">
+                    {req.inspection?.disposition}
+                  </td>
+                  <td className="py-3 px-4 text-right font-mono text-xs tabular-nums text-slate-900">
+                    {formatCurrency(
+                      (req.inspection?.damagedValue || 0) + (req.inspection?.repairCost || 0)
+                    )}
+                  </td>
+                  <td className="py-3 px-4">
+                    <StatusIndicator status={req.status} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}

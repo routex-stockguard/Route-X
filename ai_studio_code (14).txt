@@ -1,0 +1,939 @@
+import React, { useEffect, useState } from 'react';
+import {
+  AlertTriangle,
+  Banknote,
+  CheckCircle2,
+  Mail,
+  MapPin,
+  Package,
+  Send,
+  Truck,
+  Upload,
+  Warehouse,
+} from 'lucide-react';
+import {
+  formatCurrency,
+  Product,
+  ReturnRequest,
+  ReturnStatus,
+  Role,
+  WarehouseInfo,
+} from '../types';
+import { ResilientImage, StatusIndicator } from './StatusText';
+import { SendRefundSlipPayload } from './TrackingView';
+
+interface WarehouseViewProps {
+  requests: ReturnRequest[];
+  warehouses: WarehouseInfo[];
+  products: Product[];
+  activeRole: Role;
+  onUpdateStatus: (id: string, nextStatus: ReturnStatus) => void;
+  onReceiveWarehouse: (requestId: string, warehouseId: string, locationBin: string) => void;
+  onDispatchToCustomer: (
+    requestId: string,
+    trackingNumber: string,
+    productName: string,
+    carrier: string,
+    closeAfterDispatch: boolean,
+    onSuccess: () => void,
+    productSku?: string
+  ) => void;
+  onSendRefundSlip: (
+    requestId: string,
+    payload: SendRefundSlipPayload,
+    onSuccess: () => void
+  ) => void;
+}
+
+const CARRIERS = [
+  'RouteX Express',
+  'Flash Express',
+  'Kerry Express',
+  'Thailand Post (EMS)',
+  'J&T Express',
+];
+
+export function WarehouseView({
+  requests,
+  warehouses,
+  products,
+  activeRole,
+  onUpdateStatus,
+  onReceiveWarehouse,
+  onDispatchToCustomer,
+  onSendRefundSlip,
+}: WarehouseViewProps) {
+  const [selectedWhMap, setSelectedWhMap] = useState<Record<string, string>>({});
+  const [binInputMap, setBinInputMap] = useState<Record<string, string>>({});
+
+  const inboundQueue = requests.filter(
+    (r) =>
+      (r.status === 'อนุมัติการคืนสินค้า' || r.status === 'รอรับสินค้าคืน') &&
+      r.resolution?.type !== 'refund'
+  );
+
+  const outboundEligible = requests.filter(
+    (r) =>
+      r.status !== 'ปฏิเสธคำขอคืนสินค้า' &&
+      !r.outboundDispatch &&
+      r.resolution?.type !== 'refund'
+  );
+
+  const refundEligible = requests.filter(
+    (r) =>
+      r.status !== 'ปฏิเสธคำขอคืนสินค้า' &&
+      r.resolution?.type === 'refund' &&
+      !r.refundSlip
+  );
+
+  const dispatchedItems = requests.filter((r) => Boolean(r.outboundDispatch));
+  const refundSentItems = requests.filter((r) => Boolean(r.refundSlip));
+
+  const [dispatchReqId, setDispatchReqId] = useState<string>(
+    outboundEligible[0]?.id || ''
+  );
+  const [trackingNumber, setTrackingNumber] = useState('');
+  const [selectedProductChoice, setSelectedProductChoice] = useState<string>('');
+  const [customProductName, setCustomProductName] = useState<string>('');
+  const [carrier, setCarrier] = useState(CARRIERS[0]);
+  const [closeAfterDispatch, setCloseAfterDispatch] = useState(true);
+  const [dispatchError, setDispatchError] = useState('');
+
+  const [refundReqId, setRefundReqId] = useState<string>(refundEligible[0]?.id || '');
+  const [refundEmail, setRefundEmail] = useState<string>(
+    refundEligible[0]?.customerEmail || ''
+  );
+  const [refundAmount, setRefundAmount] = useState<number>(
+    refundEligible[0] ? refundEligible[0].unitPrice * refundEligible[0].qty : 0
+  );
+  const [refundRef, setRefundRef] = useState<string>('');
+  const [refundSlipImage, setRefundSlipImage] = useState<string>('');
+  const [refundNote, setRefundNote] = useState<string>('');
+  const [closeAfterRefund, setCloseAfterRefund] = useState<boolean>(true);
+  const [refundError, setRefundError] = useState<string>('');
+
+  useEffect(() => {
+    if (!outboundEligible.some((r) => r.id === dispatchReqId)) {
+      setDispatchReqId(outboundEligible[0]?.id || '');
+    }
+  }, [outboundEligible, dispatchReqId]);
+
+  useEffect(() => {
+    if (!refundEligible.some((r) => r.id === refundReqId)) {
+      const first = refundEligible[0];
+      setRefundReqId(first?.id || '');
+      setRefundEmail(first?.customerEmail || '');
+      setRefundAmount(first ? first.unitPrice * first.qty : 0);
+    }
+  }, [refundEligible, refundReqId]);
+
+  const activeOutboundReq =
+    outboundEligible.find((r) => r.id === dispatchReqId) || null;
+
+  const activeRefundReq =
+    refundEligible.find((r) => r.id === refundReqId) || null;
+
+  const selectedInventoryProduct =
+    selectedProductChoice && selectedProductChoice !== '__CUSTOM__'
+      ? products.find((p) => p.sku === selectedProductChoice) || null
+      : null;
+
+  const resolvedProductName =
+    selectedProductChoice === '__CUSTOM__'
+      ? customProductName.trim()
+      : selectedInventoryProduct?.name || '';
+
+  const receivedItems = requests.filter(
+    (r) =>
+      r.status === 'ได้รับสินค้าแล้ว' ||
+      r.status === 'อยู่ระหว่างตรวจสอบสินค้า' ||
+      r.status === 'คืนเงิน / เปลี่ยนสินค้า' ||
+      r.status === 'ตรวจสอบเสร็จสิ้น / ปิดรายการ'
+  );
+
+  const agingQueue = requests.filter(
+    (r) => r.agingDays >= 3 && r.status !== 'ตรวจสอบเสร็จสิ้น / ปิดรายการ'
+  );
+
+  const handleDispatchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeOutboundReq) return;
+
+    if (!trackingNumber.trim() || !resolvedProductName) {
+      setDispatchError(
+        'กรุณาระบุ "เลขที่พัสดุ" และ "เลือกชื่อสินค้าในคลังที่จัดส่ง" ให้ครบถ้วนก่อนส่งพัสดุไปหาลูกค้า'
+      );
+      return;
+    }
+
+    setDispatchError('');
+    onDispatchToCustomer(
+      activeOutboundReq.id,
+      trackingNumber.trim(),
+      resolvedProductName,
+      carrier,
+      closeAfterDispatch,
+      () => {
+        setTrackingNumber('');
+        setSelectedProductChoice('');
+        setCustomProductName('');
+      },
+      selectedInventoryProduct?.sku
+    );
+  };
+
+  const handleRefundSlipFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setRefundSlipImage(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRefundSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeRefundReq) return;
+    if (!refundEmail.trim() || !refundRef.trim() || refundAmount <= 0 || !refundSlipImage) {
+      setRefundError('กรุณาระบุอีเมลลูกค้า ยอดเงินคืน เลขอ้างอิงสลิป และแนบรูปภาพสลิปโอนเงินให้ครบถ้วน');
+      return;
+    }
+    setRefundError('');
+    onSendRefundSlip(
+      activeRefundReq.id,
+      {
+        sentToEmail: refundEmail.trim(),
+        amount: refundAmount,
+        transferRef: refundRef.trim(),
+        slipImageUrl: refundSlipImage || undefined,
+        note: refundNote.trim() || undefined,
+        closeAfterSend: closeAfterRefund,
+      },
+      () => {
+        setRefundRef('');
+        setRefundSlipImage('');
+        setRefundNote('');
+      }
+    );
+  };
+
+  return (
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900">
+          จัดการคลังสินค้า · รับพัสดุคืน &amp; จัดส่งพัสดุถึงลูกค้า
+        </h1>
+        <p className="text-sm text-slate-500 mt-1">
+          ตรวจสอบความจุคลัง บันทึกรับพัสดุเข้า Bin/Rack และระบุเลขที่พัสดุพร้อมชื่อสินค้าก่อนจัดส่งให้ลูกค้า
+        </p>
+      </div>
+
+      {/* Warehouse Capacity Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {warehouses.map((wh) => {
+          const pct = Math.round((wh.occupied / wh.capacity) * 100);
+          return (
+            <div key={wh.id} className="bg-white border border-rose-100 rounded-xl p-5 space-y-3 shadow-xs shadow-pink-500/5">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-xs font-mono text-slate-500">{wh.id}</p>
+                  <h2 className="text-sm font-semibold text-slate-900 mt-0.5">{wh.name}</h2>
+                </div>
+                <Warehouse size={18} className="text-pink-600 shrink-0" aria-hidden="true" />
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs font-mono tabular-nums text-slate-600">
+                  <span>ใช้งาน {wh.occupied.toLocaleString()} / {wh.capacity.toLocaleString()} ชิ้น</span>
+                  <span className="font-semibold text-slate-900">{pct}%</span>
+                </div>
+                <div className="w-full h-2 bg-rose-100/70 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${
+                      pct > 80 ? 'bg-amber-500' : 'bg-gradient-to-r from-pink-500 to-rose-500'
+                    }`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Outbound Dispatch to Customer Workbench */}
+      <div className="bg-white border border-rose-100 rounded-xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-rose-100 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Truck size={18} className="text-pink-600" aria-hidden="true" />
+            <h2 className="text-base font-semibold text-slate-900">
+              ส่งพัสดุไปหาลูกค้า (ระบุเลขที่พัสดุ &amp; ชื่อสินค้าก่อนจัดส่ง)
+            </h2>
+          </div>
+          <span className="text-xs font-mono text-slate-500 tabular-nums">
+            รอจัดส่ง {outboundEligible.length} รายการ
+          </span>
+        </div>
+
+        {outboundEligible.length === 0 ? (
+          <div className="p-8 text-center text-sm text-slate-500">
+            ทุกรายการที่ดำเนินการได้ถูกจัดส่งพัสดุไปยังลูกค้าครบถ้วนแล้ว
+          </div>
+        ) : (
+          <form onSubmit={handleDispatchSubmit} className="p-6 space-y-5">
+            {dispatchError && (
+              <div
+                role="alert"
+                className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs"
+              >
+                {dispatchError}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="out-req"
+                  className="block text-xs font-medium text-slate-700"
+                >
+                  เลือกรายการคำร้องของลูกค้า *
+                </label>
+                <select
+                  id="out-req"
+                  value={dispatchReqId}
+                  onChange={(e) => {
+                    setDispatchReqId(e.target.value);
+                    setDispatchError('');
+                  }}
+                  className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg bg-white focus:border-pink-500"
+                >
+                  {outboundEligible.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.id} · {r.customerName} ({r.productName})
+                    </option>
+                  ))}
+                </select>
+                {activeOutboundReq && (
+                  <div className="text-xs text-slate-500 space-y-1">
+                    <p>
+                      ลูกค้า: <span className="font-medium text-slate-700">{activeOutboundReq.customerName}</span>{' '}
+                      · โทร <span className="font-mono">{activeOutboundReq.customerPhone}</span> · สินค้าเดิม:{' '}
+                      <span className="font-medium text-slate-700">{activeOutboundReq.productName}</span>
+                    </p>
+                    {activeOutboundReq.resolution?.type === 'reship' && (
+                      <p className="text-pink-700">
+                        ปลายทางจัดส่งใหม่: {activeOutboundReq.resolution.reshipName} ({activeOutboundReq.resolution.reshipPhone}) — {activeOutboundReq.resolution.reshipAddress}
+                      </p>
+                    )}
+                    {activeOutboundReq.resolution?.type === 'refund' && (
+                      <p className="text-emerald-700">
+                        ลูกค้าขอรับเงินคืน: {activeOutboundReq.resolution.refundBankName} · {activeOutboundReq.resolution.refundAccountName} ({activeOutboundReq.resolution.refundAccountNumber})
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="out-carrier"
+                  className="block text-xs font-medium text-slate-700"
+                >
+                  บริษัทขนส่ง
+                </label>
+                <select
+                  id="out-carrier"
+                  value={carrier}
+                  onChange={(e) => setCarrier(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg bg-white focus:border-pink-500"
+                >
+                  {CARRIERS.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="out-tracking"
+                  className="block text-xs font-medium text-slate-700"
+                >
+                  เลขที่พัสดุ (Tracking / Parcel Number) *
+                </label>
+                <input
+                  id="out-tracking"
+                  type="text"
+                  required
+                  value={trackingNumber}
+                  onChange={(e) => setTrackingNumber(e.target.value)}
+                  placeholder="ระบุเลขที่พัสดุ เช่น RTX-TH-88920144"
+                  className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg font-mono focus:border-pink-500"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <label
+                    htmlFor="out-product-select"
+                    className="block text-xs font-medium text-slate-700"
+                  >
+                    ชื่อสินค้าที่จัดส่ง (เลือกจากสินค้าในคลัง) *
+                  </label>
+                  {activeOutboundReq &&
+                    products.some((p) => p.sku === activeOutboundReq.sku && p.stock > 0) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedProductChoice(activeOutboundReq.sku);
+                          setDispatchError('');
+                        }}
+                        className="text-xs font-medium text-pink-600 hover:text-pink-700 cursor-pointer"
+                      >
+                        เลือกสินค้าตามคำร้อง ({activeOutboundReq.sku})
+                      </button>
+                    )}
+                </div>
+
+                <select
+                  id="out-product-select"
+                  required
+                  value={selectedProductChoice}
+                  onChange={(e) => {
+                    setSelectedProductChoice(e.target.value);
+                    setDispatchError('');
+                  }}
+                  className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg bg-white focus:border-pink-500"
+                >
+                  <option value="">-- เลือกสินค้าในคลัง --</option>
+                  {products.map((p) => (
+                    <option key={p.sku} value={p.sku} disabled={p.stock <= 0}>
+                      {p.name} ({p.sku}) — คงเหลือในคลัง {p.stock} ชิ้น
+                      {p.stock <= 0 ? ' (สินค้าหมด)' : ''}
+                    </option>
+                  ))}
+                  <option value="__CUSTOM__">+ ระบุชื่อสินค้าเอง (รายการอื่น)</option>
+                </select>
+
+                {selectedInventoryProduct && (
+                  <p className="text-xs text-slate-500 font-mono">
+                    SKU: {selectedInventoryProduct.sku} · หมวด {selectedInventoryProduct.category} · คงเหลือ {selectedInventoryProduct.stock} ชิ้น
+                  </p>
+                )}
+
+                {selectedProductChoice === '__CUSTOM__' && (
+                  <input
+                    id="out-product-custom"
+                    type="text"
+                    required
+                    value={customProductName}
+                    onChange={(e) => setCustomProductName(e.target.value)}
+                    placeholder="พิมพ์ชื่อสินค้าที่จัดส่งไปหาลูกค้า"
+                    className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg focus:border-pink-500 mt-1.5"
+                  />
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-3 border-t border-rose-100">
+              {activeRole === 'Admin' ? (
+                <label className="inline-flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={closeAfterDispatch}
+                    onChange={(e) => setCloseAfterDispatch(e.target.checked)}
+                    className="rounded border-rose-300 text-pink-600 focus:ring-pink-500"
+                  />
+                  <span>ปิดรายการคำร้องหลังส่งพัสดุ (ตรวจสอบเสร็จสิ้น / ปิดรายการ)</span>
+                </label>
+              ) : (
+                <p className="text-xs text-slate-500">
+                  หลังจัดส่งพัสดุแล้ว ผู้ดูแลและแอดมินจะเป็นผู้อนุมัติขั้นตอนปิดรายการ
+                </p>
+              )}
+
+              <button
+                type="submit"
+                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white text-sm font-semibold rounded-lg shadow-sm shadow-pink-500/20 transition-all whitespace-nowrap cursor-pointer"
+              >
+                <Send size={15} aria-hidden="true" />
+                <span>ยืนยันส่งพัสดุไปหาลูกค้า</span>
+              </button>
+            </div>
+          </form>
+        )}
+
+        {dispatchedItems.length > 0 && (
+          <div className="border-t border-rose-100">
+            <div className="px-6 py-3 bg-rose-50/70 border-b border-rose-100 text-xs font-semibold text-rose-900">
+              ประวัติพัสดุที่จัดส่งให้ลูกค้าแล้ว ({dispatchedItems.length} รายการ)
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="bg-rose-50/40 text-xs text-rose-900/70 border-b border-rose-100">
+                  <tr>
+                    <th className="py-2.5 px-4 font-medium">รหัสคำร้อง</th>
+                    <th className="py-2.5 px-4 font-medium">เลขที่พัสดุ</th>
+                    <th className="py-2.5 px-4 font-medium">ชื่อสินค้าที่จัดส่ง</th>
+                    <th className="py-2.5 px-4 font-medium">ผู้รับ &amp; ขนส่ง</th>
+                    <th className="py-2.5 px-4 font-medium">ผู้ส่ง / เวลา</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-rose-100/70">
+                  {dispatchedItems.map((req) => (
+                    <tr key={req.id} className="hover:bg-rose-50/40">
+                      <td className="py-3 px-4 font-mono text-xs font-semibold text-slate-900 whitespace-nowrap">
+                        {req.id}
+                      </td>
+                      <td className="py-3 px-4 font-mono text-xs font-bold text-pink-700 whitespace-nowrap">
+                        {req.outboundDispatch?.trackingNumber}
+                      </td>
+                      <td className="py-3 px-4 text-xs font-medium text-slate-900">
+                        {req.outboundDispatch?.productName}
+                      </td>
+                      <td className="py-3 px-4 text-xs text-slate-600">
+                        {req.customerName} · {req.outboundDispatch?.carrier}
+                      </td>
+                      <td className="py-3 px-4 text-xs text-slate-500 font-mono whitespace-nowrap">
+                        {req.outboundDispatch?.shippedBy} · {req.outboundDispatch?.shippedAt}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Refund Slip Dispatch to Customer Email (Admin Only) */}
+      {activeRole === 'Admin' && (
+      <div className="bg-white border border-emerald-200 rounded-xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-emerald-100 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Mail size={18} className="text-emerald-600" aria-hidden="true" />
+            <h2 className="text-base font-semibold text-slate-900">
+              ส่งสลิปโอนเงินคืนถึงอีเมลลูกค้า (สำหรับรายการขอรับเงินคืน)
+            </h2>
+          </div>
+          <span className="text-xs font-mono text-slate-500 tabular-nums">
+            รอส่งสลิป {refundEligible.length} รายการ
+          </span>
+        </div>
+
+        {refundEligible.length === 0 ? (
+          <div className="p-8 text-center text-sm text-slate-500">
+            ขณะนี้ไม่มีรายการขอรับเงินคืนที่รอส่งสลิปทางอีเมล
+          </div>
+        ) : (
+          <form onSubmit={handleRefundSubmit} className="p-6 space-y-5">
+            {refundError && (
+              <div
+                role="alert"
+                className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs"
+              >
+                {refundError}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label htmlFor="wh-refund-req" className="block text-xs font-medium text-slate-700">
+                  เลือกรายการคำร้องขอรับเงินคืน *
+                </label>
+                <select
+                  id="wh-refund-req"
+                  value={refundReqId}
+                  onChange={(e) => {
+                    const nextId = e.target.value;
+                    const found = refundEligible.find((r) => r.id === nextId);
+                    setRefundReqId(nextId);
+                    setRefundEmail(found?.customerEmail || '');
+                    setRefundAmount(found ? found.unitPrice * found.qty : 0);
+                    setRefundError('');
+                  }}
+                  className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg bg-white focus:border-pink-500"
+                >
+                  {refundEligible.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.id} · {r.customerName} ({formatCurrency(r.unitPrice * r.qty)})
+                    </option>
+                  ))}
+                </select>
+                {activeRefundReq?.resolution && (
+                  <div className="p-3 rounded-lg bg-emerald-50/60 border border-emerald-200 text-xs text-emerald-950 space-y-0.5">
+                    <p className="font-semibold flex items-center gap-1.5">
+                      <Banknote size={14} className="text-emerald-600" aria-hidden="true" />
+                      <span>บัญชีรับเงินคืน: {activeRefundReq.resolution.refundBankName}</span>
+                    </p>
+                    <p>
+                      ชื่อบัญชี: {activeRefundReq.resolution.refundAccountName} · เลขบัญชี:{' '}
+                      <span className="font-mono font-bold">
+                        {activeRefundReq.resolution.refundAccountNumber}
+                      </span>
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="wh-refund-email" className="block text-xs font-medium text-slate-700">
+                  อีเมลลูกค้าสำหรับส่งสลิป *
+                </label>
+                <input
+                  id="wh-refund-email"
+                  type="email"
+                  required
+                  value={refundEmail}
+                  onChange={(e) => setRefundEmail(e.target.value)}
+                  placeholder="customer@email.com"
+                  className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg focus:border-pink-500"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="wh-refund-amount" className="block text-xs font-medium text-slate-700">
+                  ยอดเงินที่โอนคืน (บาท) *
+                </label>
+                <input
+                  id="wh-refund-amount"
+                  type="number"
+                  min={1}
+                  required
+                  value={refundAmount}
+                  onChange={(e) => setRefundAmount(Number(e.target.value) || 0)}
+                  className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg font-mono tabular-nums focus:border-pink-500"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="wh-refund-ref" className="block text-xs font-medium text-slate-700">
+                  เลขอ้างอิงสลิป (Transaction Ref) *
+                </label>
+                <input
+                  id="wh-refund-ref"
+                  type="text"
+                  required
+                  value={refundRef}
+                  onChange={(e) => setRefundRef(e.target.value)}
+                  placeholder="เช่น SLIP-20261115-001"
+                  className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg font-mono focus:border-pink-500"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="wh-refund-note" className="block text-xs font-medium text-slate-700">
+                  หมายเหตุถึงลูกค้า (ไม่บังคับ)
+                </label>
+                <input
+                  id="wh-refund-note"
+                  type="text"
+                  value={refundNote}
+                  onChange={(e) => setRefundNote(e.target.value)}
+                  placeholder="เช่น โอนเงินคืนเต็มจำนวนเรียบร้อยแล้ว"
+                  className="w-full px-3 py-2 text-sm border border-rose-200 rounded-lg focus:border-pink-500"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="block text-xs font-medium text-slate-700">
+                  แนบรูปภาพสลิปโอนเงิน *
+                </span>
+                <label className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 text-xs font-medium rounded-lg cursor-pointer transition-colors">
+                  <Upload size={14} aria-hidden="true" />
+                  <span>{refundSlipImage ? 'อัปโหลดสลิปแล้ว (เปลี่ยนรูป)' : 'อัปโหลดรูปสลิปโอนเงิน *'}</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleRefundSlipFile}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {refundSlipImage && (
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-emerald-50/50 border border-emerald-200">
+                <div className="w-14 h-16 rounded border border-emerald-200 overflow-hidden bg-white shrink-0">
+                  <ResilientImage src={refundSlipImage} alt="ตัวอย่างสลิปที่แนบ" />
+                </div>
+                <div className="text-xs text-emerald-900">
+                  <p className="font-semibold">แนบรูปภาพสลิปโอนเงินเรียบร้อยแล้ว</p>
+                  <p className="text-emerald-700">พร้อมส่งไปยังอีเมล {refundEmail || 'ลูกค้า'}</p>
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-3 border-t border-rose-100">
+              <label className="inline-flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={closeAfterRefund}
+                  onChange={(e) => setCloseAfterRefund(e.target.checked)}
+                  className="rounded border-rose-300 text-pink-600 focus:ring-pink-500"
+                />
+                <span>ปิดรายการคำร้องหลังส่งสลิป (ตรวจสอบเสร็จสิ้น / ปิดรายการ)</span>
+              </label>
+
+              <button
+                type="submit"
+                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg transition-colors whitespace-nowrap cursor-pointer"
+              >
+                <Mail size={15} aria-hidden="true" />
+                <span>ส่งสลิปถึงเมลลูกค้า</span>
+              </button>
+            </div>
+          </form>
+        )}
+
+        {refundSentItems.length > 0 && (
+          <div className="border-t border-emerald-100">
+            <div className="px-6 py-3 bg-emerald-50/70 border-b border-emerald-100 text-xs font-semibold text-emerald-950">
+              ประวัติการส่งสลิปโอนเงินคืนถึงอีเมลลูกค้า ({refundSentItems.length} รายการ)
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="bg-emerald-50/40 text-xs text-emerald-900/70 border-b border-emerald-100">
+                  <tr>
+                    <th className="py-2.5 px-4 font-medium">รหัสคำร้อง</th>
+                    <th className="py-2.5 px-4 font-medium">อีเมลลูกค้า</th>
+                    <th className="py-2.5 px-4 font-medium">เลขอ้างอิงสลิป</th>
+                    <th className="py-2.5 px-4 font-medium text-right">ยอดเงินคืน</th>
+                    <th className="py-2.5 px-4 font-medium">ผู้ส่ง / เวลา</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-emerald-100/70">
+                  {refundSentItems.map((req) => (
+                    <tr key={req.id} className="hover:bg-emerald-50/30">
+                      <td className="py-3 px-4 font-mono text-xs font-semibold text-slate-900 whitespace-nowrap">
+                        {req.id}
+                      </td>
+                      <td className="py-3 px-4 font-mono text-xs text-slate-800">
+                        {req.refundSlip?.sentToEmail}
+                      </td>
+                      <td className="py-3 px-4 font-mono text-xs font-semibold text-emerald-700 whitespace-nowrap">
+                        {req.refundSlip?.transferRef}
+                      </td>
+                      <td className="py-3 px-4 font-mono text-xs font-bold text-right text-slate-900 tabular-nums whitespace-nowrap">
+                        {formatCurrency(req.refundSlip?.amount || 0)}
+                      </td>
+                      <td className="py-3 px-4 text-xs text-slate-500 font-mono whitespace-nowrap">
+                        {req.refundSlip?.sentBy} · {req.refundSlip?.sentAt}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+      )}
+
+      {/* Inbound Receiving Queue */}
+      <div className="bg-white border border-rose-100 rounded-xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-rose-100 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Package size={18} className="text-pink-600" aria-hidden="true" />
+            <h2 className="text-base font-semibold text-slate-900">
+              คิวยืนยันรอรับสินค้าคืน &amp; รับพัสดุเข้าคลัง (Inbound Return Queue)
+            </h2>
+          </div>
+          <span className="text-xs font-mono text-slate-500 tabular-nums">
+            {inboundQueue.length} รายการ
+          </span>
+        </div>
+
+        {inboundQueue.length === 0 ? (
+          <div className="p-10 text-center text-sm text-slate-500">
+            ขณะนี้ไม่มีพัสดุคืนที่รอรับเข้าคลัง
+          </div>
+        ) : (
+          <div className="divide-y divide-rose-100/70">
+            {inboundQueue.map((req) => {
+              const currentWh = selectedWhMap[req.id] || req.warehouseId || warehouses[0].id;
+              const currentBin =
+                binInputMap[req.id] ?? (req.locationBin === 'PENDING-BIN' ? 'RACK-A01' : req.locationBin);
+              const isAwaitingWarehouseConfirm = req.status === 'อนุมัติการคืนสินค้า';
+
+              return (
+                <div
+                  key={req.id}
+                  className="p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="w-16 h-16 rounded-lg overflow-hidden border border-rose-200 shrink-0 bg-rose-50">
+                      <ResilientImage src={req.imageUrl} alt={req.productName} />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <span className="font-mono text-sm font-bold text-slate-900">
+                          {req.id}
+                        </span>
+                        <StatusIndicator status={req.status} />
+                      </div>
+                      <p className="text-sm font-medium text-slate-800">{req.productName}</p>
+                      <p className="text-xs text-slate-500 font-mono">
+                        {req.sku} · x{req.qty} · ผู้ส่งคืน: {req.customerName}
+                      </p>
+                      {req.customerReturnTracking && (
+                        <p className="text-xs font-mono text-pink-700 font-semibold">
+                          เลขพัสดุที่ลูกค้าส่งคืน ({req.customerReturnCarrier || 'ขนส่งทั่วไป'}): {req.customerReturnTracking}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {isAwaitingWarehouseConfirm ? (
+                    <div className="flex items-center gap-3">
+                      {activeRole === 'Admin' ? (
+                        <button
+                          type="button"
+                          onClick={() => onUpdateStatus(req.id, 'รอรับสินค้าคืน')}
+                          className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white text-xs font-semibold rounded-lg shadow-xs shadow-pink-500/20 transition-all whitespace-nowrap cursor-pointer"
+                        >
+                          <CheckCircle2 size={15} aria-hidden="true" />
+                          <span>อนุมัติขั้นตอน: รอรับสินค้าคืน</span>
+                        </button>
+                      ) : (
+                        <span className="px-3 py-1.5 rounded-lg bg-rose-50 border border-rose-200 text-xs font-medium text-rose-800 whitespace-nowrap">
+                          รอผู้ดูแลและแอดมินอนุมัติขั้นตอน: รอรับสินค้าคืน
+                        </span>
+                      )}
+                    </div>
+                  ) : activeRole === 'Warehouse Staff' ? (
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-3">
+                      <div className="space-y-1">
+                        <label
+                          htmlFor={`wh-${req.id}`}
+                          className="block text-xs font-medium text-slate-600"
+                        >
+                          คลังปลายทาง
+                        </label>
+                        <select
+                          id={`wh-${req.id}`}
+                          value={currentWh}
+                          onChange={(e) =>
+                            setSelectedWhMap((prev) => ({ ...prev, [req.id]: e.target.value }))
+                          }
+                          className="px-3 py-2 text-xs border border-rose-200 rounded-lg bg-white font-mono focus:border-pink-500"
+                        >
+                          {warehouses.map((w) => (
+                            <option key={w.id} value={w.id}>
+                              {w.id}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label
+                          htmlFor={`bin-${req.id}`}
+                          className="block text-xs font-medium text-slate-600"
+                        >
+                          ตำแหน่งจัดเก็บ (Bin/Rack)
+                        </label>
+                        <input
+                          id={`bin-${req.id}`}
+                          type="text"
+                          value={currentBin}
+                          onChange={(e) =>
+                            setBinInputMap((prev) => ({ ...prev, [req.id]: e.target.value }))
+                          }
+                          placeholder="เช่น RACK-B12"
+                          className="px-3 py-2 text-xs border border-rose-200 rounded-lg font-mono w-32 focus:border-pink-500"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onReceiveWarehouse(req.id, currentWh, currentBin || 'RACK-A01')
+                        }
+                        className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition-colors whitespace-nowrap cursor-pointer"
+                      >
+                        <CheckCircle2 size={15} aria-hidden="true" />
+                        <span>อนุมัติได้รับสินค้าแล้ว</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="px-3 py-1.5 rounded-lg bg-rose-50 border border-rose-200 text-xs font-medium text-rose-800 whitespace-nowrap">
+                      รอพนักงานคลังอนุมัติขั้นตอน: ได้รับสินค้าแล้ว
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Bottom Split: Aging Watchlist & Recently Received */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white border border-rose-100 rounded-xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-rose-100 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <AlertTriangle size={17} className="text-amber-600" aria-hidden="true" />
+              <h2 className="text-sm font-semibold text-slate-900">
+                แจ้งเตือนพัสดุค้างคลัง (Aging ≥ 3 วัน)
+              </h2>
+            </div>
+            <span className="text-xs font-mono text-slate-500 tabular-nums">
+              {agingQueue.length} รายการ
+            </span>
+          </div>
+          <div className="divide-y divide-rose-100/70">
+            {agingQueue.map((req) => (
+              <div key={req.id} className="px-6 py-3.5 flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-mono text-xs font-semibold text-slate-900">{req.id}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {req.productName} · {req.warehouseId}
+                  </p>
+                </div>
+                <span className="font-mono text-xs font-semibold text-amber-700 tabular-nums">
+                  ค้าง {req.agingDays} วัน
+                </span>
+              </div>
+            ))}
+            {agingQueue.length === 0 && (
+              <div className="p-6 text-center text-xs text-slate-500">
+                ไม่มีสินค้าค้างคลังเกิน 3 วัน
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-white border border-rose-100 rounded-xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-rose-100 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <MapPin size={17} className="text-pink-600" aria-hidden="true" />
+              <h2 className="text-sm font-semibold text-slate-900">
+                พัสดุที่รับเข้าคลังแล้วล่าสุด
+              </h2>
+            </div>
+            <span className="text-xs font-mono text-slate-500 tabular-nums">
+              {receivedItems.length} รายการ
+            </span>
+          </div>
+          <div className="divide-y divide-rose-100/70">
+            {receivedItems.map((req) => (
+              <div key={req.id} className="px-6 py-3.5 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-mono text-xs font-semibold text-slate-900">{req.id}</p>
+                  <p className="text-xs text-slate-500 truncate">
+                    {req.warehouseId} · {req.locationBin} · รับเมื่อ {req.receivedDate || '-'}
+                  </p>
+                </div>
+                <StatusIndicator status={req.status} />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
