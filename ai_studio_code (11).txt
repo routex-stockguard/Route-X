@@ -1,0 +1,332 @@
+import React, { useMemo } from 'react';
+import {
+  CheckCircle2,
+  Eye,
+  PlusCircle,
+  Search,
+  XCircle,
+} from 'lucide-react';
+import {
+  formatCurrency,
+  getTotalRequestCost,
+  ReturnRequest,
+  ReturnStatus,
+  Role,
+  ROLE_THAI_LABELS,
+  STATUS_WORKFLOW,
+  STEP_APPROVER_ROLE,
+  TabId,
+} from '../types';
+import { ResilientImage, StatusIndicator } from './StatusText';
+
+interface RequestsViewProps {
+  requests: ReturnRequest[];
+  activeRole: Role;
+  searchTerm: string;
+  onSearchChange: (val: string) => void;
+  filterStatus: string;
+  onFilterStatusChange: (val: string) => void;
+  onUpdateStatus: (id: string, nextStatus: ReturnStatus) => void;
+  onReceiveWarehouse?: (requestId: string, warehouseId: string, locationBin: string) => void;
+  onGoToTracking?: (req: ReturnRequest) => void;
+  onInspectDetails: (req: ReturnRequest) => void;
+  onNavigateTab: (tab: TabId) => void;
+}
+
+export function RequestsView({
+  requests,
+  activeRole,
+  searchTerm,
+  onSearchChange,
+  filterStatus,
+  onFilterStatusChange,
+  onUpdateStatus,
+  onReceiveWarehouse,
+  onGoToTracking,
+  onInspectDetails,
+  onNavigateTab,
+}: RequestsViewProps) {
+  const filteredRequests = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    return requests.filter((r) => {
+      const matchesStatus = filterStatus === 'ALL' || r.status === filterStatus;
+      const matchesQuery =
+        !query ||
+        r.id.toLowerCase().includes(query) ||
+        r.orderNumber.toLowerCase().includes(query) ||
+        r.customerName.toLowerCase().includes(query) ||
+        r.sku.toLowerCase().includes(query) ||
+        r.productName.toLowerCase().includes(query);
+      return matchesStatus && matchesQuery;
+    });
+  }, [requests, searchTerm, filterStatus]);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">รายการคำขอคืนสินค้าทั้งหมด</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            ค้นหา ตรวจสอบรายละเอียด และอนุมัติคำขอคืนสินค้าในระบบ
+          </p>
+        </div>
+        {activeRole === 'Admin' && (
+          <button
+            type="button"
+            onClick={() => onNavigateTab('new-request')}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-pink-600 hover:bg-pink-700 text-white text-sm font-medium rounded-lg shadow-xs shadow-pink-500/15 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+          >
+            <PlusCircle size={16} aria-hidden="true" />
+            <span>สร้างคำขอคืนสินค้า</span>
+          </button>
+        )}
+      </div>
+
+      <div className="bg-white border border-rose-100 rounded-xl p-4 flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
+        <div className="relative flex-1 max-w-md">
+          <Search
+            size={16}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-rose-400"
+            aria-hidden="true"
+          />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder="ค้นหาด้วยรหัส RTX, เลขคำสั่งซื้อ, ชื่อลูกค้า หรือ SKU..."
+            className="w-full pl-9 pr-3 py-2 text-sm border border-rose-200 rounded-lg bg-rose-50/40 focus:bg-white focus:border-pink-500 transition-colors"
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <label htmlFor="status-filter" className="text-xs font-medium text-slate-600 whitespace-nowrap">
+            กรองตามสถานะ:
+          </label>
+          <select
+            id="status-filter"
+            value={filterStatus}
+            onChange={(e) => onFilterStatusChange(e.target.value)}
+            className="px-3 py-2 text-sm border border-rose-200 rounded-lg bg-white text-slate-800 focus:border-pink-500"
+          >
+            <option value="ALL">ทุกสถานะ ({requests.length})</option>
+            {STATUS_WORKFLOW.map((status) => (
+              <option key={status} value={status}>
+                {status}
+              </option>
+            ))}
+            <option value="ปฏิเสธคำขอคืนสินค้า">ปฏิเสธคำขอคืนสินค้า</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="bg-white border border-rose-100 rounded-xl overflow-hidden">
+        {filteredRequests.length === 0 ? (
+          <div className="p-12 text-center space-y-3">
+            <p className="text-base font-medium text-slate-800">
+              ไม่พบรายการคำขอคืนสินค้าที่ตรงกับเงื่อนไข
+            </p>
+            <p className="text-sm text-slate-500">
+              ลองล้างตัวกรองหรือค้นหาด้วยรหัสคำร้องใหม่อีกครั้ง
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                onSearchChange('');
+                onFilterStatusChange('ALL');
+              }}
+              className="px-4 py-2 text-sm font-medium text-pink-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+            >
+              แสดงรายการทั้งหมด
+            </button>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="bg-rose-50/70 text-xs text-rose-900/70 border-b border-rose-100">
+                <tr>
+                  <th className="py-3.5 px-4 font-medium">รหัสคำร้อง / คำสั่งซื้อ</th>
+                  <th className="py-3.5 px-4 font-medium">สินค้า</th>
+                  <th className="py-3.5 px-4 font-medium">ลูกค้า &amp; สาเหตุ</th>
+                  <th className="py-3.5 px-4 font-medium">คลัง &amp; ตำแหน่ง</th>
+                  <th className="py-3.5 px-4 font-medium text-right">มูลค่า / ต้นทุน</th>
+                  <th className="py-3.5 px-4 font-medium">สถานะ</th>
+                  <th className="py-3.5 px-4 font-medium text-right">จัดการ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-rose-100/70">
+                {filteredRequests.map((req) => (
+                  <tr key={req.id} className="hover:bg-rose-50/40 transition-colors">
+                    <td className="py-3.5 px-4 whitespace-nowrap">
+                      <div className="font-mono text-xs font-semibold text-slate-900">
+                        {req.id}
+                      </div>
+                      <div className="text-xs text-slate-500 font-mono mt-0.5">
+                        {req.orderNumber} · {req.requestDate}
+                      </div>
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-11 h-11 rounded-lg overflow-hidden border border-rose-200 shrink-0 bg-rose-50">
+                          <ResilientImage src={req.imageUrl} alt={req.productName} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-medium text-slate-900 truncate max-w-[190px]">
+                            {req.productName}
+                          </div>
+                          <div className="text-xs text-slate-500 font-mono tabular-nums">
+                            {req.sku} · x{req.qty}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <div className="font-medium text-slate-800">{req.customerName}</div>
+                      <div className="text-xs text-slate-500 truncate max-w-[180px]">
+                        {req.reason}
+                      </div>
+                    </td>
+                    <td className="py-3.5 px-4 whitespace-nowrap">
+                      <div className="font-mono text-xs text-slate-800">{req.warehouseId}</div>
+                      <div className="font-mono text-xs text-slate-500">{req.locationBin}</div>
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-mono tabular-nums whitespace-nowrap">
+                      <div className="text-xs font-semibold text-slate-900">
+                        {formatCurrency(req.unitPrice * req.qty)}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        ต้นทุน {formatCurrency(getTotalRequestCost(req))}
+                      </div>
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <StatusIndicator status={req.status} />
+                    </td>
+                    <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                      <div className="inline-flex items-center gap-1.5">
+                        {(() => {
+                          const idx = STATUS_WORKFLOW.indexOf(req.status);
+                          const nextStep =
+                            idx >= 0 && idx < STATUS_WORKFLOW.length - 1
+                              ? STATUS_WORKFLOW[idx + 1]
+                              : null;
+                          const nextApprover = nextStep
+                            ? STEP_APPROVER_ROLE[nextStep]
+                            : null;
+
+                          if (
+                            req.status === 'รออนุมัติคำขอคืนสินค้า' &&
+                            activeRole === 'Admin'
+                          ) {
+                            return (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    onUpdateStatus(req.id, 'อนุมัติการคืนสินค้า')
+                                  }
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded-md transition-colors cursor-pointer"
+                                  title="อนุมัติคำขอคืนสินค้า"
+                                >
+                                  <CheckCircle2 size={13} aria-hidden="true" />
+                                  <span>อนุมัติ</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    onUpdateStatus(req.id, 'ปฏิเสธคำขอคืนสินค้า')
+                                  }
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-medium rounded-md transition-colors cursor-pointer"
+                                  title="ปฏิเสธคำขอคืนสินค้า"
+                                >
+                                  <XCircle size={13} aria-hidden="true" />
+                                  <span>ปฏิเสธ</span>
+                                </button>
+                              </>
+                            );
+                          }
+
+                          if (nextStep && nextApprover === activeRole) {
+                            const needsRefundSlip =
+                              nextStep === 'ตรวจสอบเสร็จสิ้น / ปิดรายการ' &&
+                              req.resolution?.type === 'refund' &&
+                              (!req.refundSlip?.transferRef?.trim() ||
+                                !req.refundSlip?.slipImageUrl);
+
+                            if (needsRefundSlip) {
+                              return onGoToTracking ? (
+                                <button
+                                  type="button"
+                                  onClick={() => onGoToTracking(req)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-medium rounded-md transition-colors cursor-pointer"
+                                  title="กรุณาส่งสลิปและกรอกเลขอ้างอิงก่อนปิดรายการ"
+                                >
+                                  <span>ส่งสลิป &amp; เลขอ้างอิง</span>
+                                </button>
+                              ) : (
+                                <span className="px-2 py-1 rounded bg-amber-50 border border-amber-200 text-[11px] text-amber-800">
+                                  ต้องส่งสลิป &amp; เลขอ้างอิงก่อน
+                                </span>
+                              );
+                            }
+
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (
+                                    nextStep === 'ได้รับสินค้าแล้ว' &&
+                                    onReceiveWarehouse
+                                  ) {
+                                    onReceiveWarehouse(
+                                      req.id,
+                                      req.warehouseId || 'WH-BKK-01',
+                                      req.locationBin === 'PENDING-BIN'
+                                        ? 'RACK-A01'
+                                        : req.locationBin
+                                    );
+                                  } else {
+                                    onUpdateStatus(req.id, nextStep);
+                                  }
+                                }}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-pink-600 hover:bg-pink-700 text-white text-xs font-medium rounded-md transition-colors cursor-pointer"
+                                title={`อนุมัติขั้นตอน: ${nextStep}`}
+                              >
+                                <CheckCircle2 size={13} aria-hidden="true" />
+                                <span>อนุมัติ: {nextStep}</span>
+                              </button>
+                            );
+                          }
+
+                          if (
+                            nextStep &&
+                            nextApprover &&
+                            activeRole !== 'Customer'
+                          ) {
+                            return (
+                              <span className="px-2 py-1 rounded bg-rose-50 border border-rose-100 text-[11px] text-rose-700">
+                                รอ{ROLE_THAI_LABELS[nextApprover]}
+                              </span>
+                            );
+                          }
+
+                          return null;
+                        })()}
+                        <button
+                          type="button"
+                          onClick={() => onInspectDetails(req)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/70 text-xs font-medium rounded-md transition-colors cursor-pointer"
+                        >
+                          <Eye size={13} aria-hidden="true" />
+                          <span>ดูข้อมูล</span>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

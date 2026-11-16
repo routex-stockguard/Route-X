@@ -1,0 +1,372 @@
+import React, { useMemo } from 'react';
+import {
+  AlertTriangle,
+  ArrowRight,
+  Clock,
+  DollarSign,
+  Download,
+  Package,
+  RefreshCw,
+} from 'lucide-react';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import {
+  formatCurrency,
+  getTotalRequestCost,
+  ReturnRequest,
+  SystemNotification,
+  TabId,
+} from '../types';
+import { StatusIndicator } from './StatusText';
+
+interface DashboardViewProps {
+  requests: ReturnRequest[];
+  notifications: SystemNotification[];
+  onExportCSV: () => void;
+  onSelectRequest: (req: ReturnRequest, targetTab?: TabId) => void;
+  onNavigateTab: (tab: TabId) => void;
+}
+
+const PIE_COLORS = ['#ec4899', '#10b981', '#f59e0b', '#be185d', '#e11d48', '#8b5cf6'];
+
+export function DashboardView({
+  requests,
+  notifications,
+  onExportCSV,
+  onSelectRequest,
+  onNavigateTab,
+}: DashboardViewProps) {
+  const stats = useMemo(() => {
+    const totalRequests = requests.length;
+    const pendingAction = requests.filter(
+      (r) =>
+        r.status !== 'ตรวจสอบเสร็จสิ้น / ปิดรายการ' &&
+        r.status !== 'ปฏิเสธคำขอคืนสินค้า'
+    ).length;
+    const totalCost = requests.reduce((sum, r) => sum + getTotalRequestCost(r), 0);
+    const totalReturnValue = requests.reduce((sum, r) => sum + r.unitPrice * r.qty, 0);
+    const restockedCount = requests.filter(
+      (r) => r.inspection?.disposition === 'นำกลับเข้าสต็อก'
+    ).length;
+    const inspectedCount = requests.filter((r) => r.inspection !== null).length;
+    const recoveryRate =
+      inspectedCount > 0 ? Math.round((restockedCount / inspectedCount) * 100) : 0;
+    const agingAlerts = requests.filter(
+      (r) => r.agingDays >= 3 && r.status !== 'ตรวจสอบเสร็จสิ้น / ปิดรายการ'
+    );
+
+    return {
+      totalRequests,
+      pendingAction,
+      totalCost,
+      totalReturnValue,
+      recoveryRate,
+      restockedCount,
+      inspectedCount,
+      agingAlerts,
+    };
+  }, [requests]);
+
+  const reasonChartData = useMemo(() => {
+    const grouped: Record<string, { reason: string; count: number; cost: number }> = {};
+    requests.forEach((r) => {
+      const shortReason =
+        r.reason.length > 18 ? `${r.reason.slice(0, 18)}…` : r.reason;
+      if (!grouped[r.reason]) {
+        grouped[r.reason] = { reason: shortReason, count: 0, cost: 0 };
+      }
+      grouped[r.reason].count += 1;
+      grouped[r.reason].cost += getTotalRequestCost(r);
+    });
+    return Object.values(grouped);
+  }, [requests]);
+
+  const statusChartData = useMemo(() => {
+    const counts: Record<string, number> = {};
+    requests.forEach((r) => {
+      counts[r.status] = (counts[r.status] || 0) + 1;
+    });
+    return Object.entries(counts).map(([name, value]) => ({ name, value }));
+  }, [requests]);
+
+  return (
+    <div className="space-y-8">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">
+            Dashboard ภาพรวมระบบคืนสินค้า
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">
+            ติดตามปริมาณคำร้อง สถานะคลังสินค้า และต้นทุน Reverse Logistics แบบเรียลไทม์
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onExportCSV}
+          className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-pink-600 hover:bg-pink-700 text-white text-sm font-medium rounded-lg shadow-xs shadow-pink-500/15 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+        >
+          <Download size={16} aria-hidden="true" />
+          <span>ส่งออกรายงาน CSV</span>
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white border border-rose-100 rounded-xl p-5 space-y-2 shadow-xs shadow-pink-500/5">
+          <div className="flex items-center justify-between text-slate-500 text-xs font-medium">
+            <span>คำร้องคืนสินค้าทั้งหมด</span>
+            <Package size={16} className="text-pink-600" aria-hidden="true" />
+          </div>
+          <div className="text-3xl font-bold text-slate-900 font-mono tabular-nums">
+            {stats.totalRequests}
+          </div>
+          <p className="text-xs text-slate-500 font-mono tabular-nums">
+            มูลค่าสินค้ารวม {formatCurrency(stats.totalReturnValue)}
+          </p>
+        </div>
+
+        <div className="bg-white border border-rose-100 rounded-xl p-5 space-y-2 shadow-xs shadow-pink-500/5">
+          <div className="flex items-center justify-between text-slate-500 text-xs font-medium">
+            <span>รายการที่กำลังดำเนินการ</span>
+            <Clock size={16} className="text-amber-600" aria-hidden="true" />
+          </div>
+          <div className="text-3xl font-bold text-slate-900 font-mono tabular-nums">
+            {stats.pendingAction}
+          </div>
+          <p className="text-xs text-slate-500 font-mono tabular-nums">
+            ค้างคลังเกิน 3 วัน: {stats.agingAlerts.length} รายการ
+          </p>
+        </div>
+
+        <div className="bg-white border border-rose-100 rounded-xl p-5 space-y-2 shadow-xs shadow-pink-500/5">
+          <div className="flex items-center justify-between text-slate-500 text-xs font-medium">
+            <span>ต้นทุนคืนสินค้าสะสม</span>
+            <DollarSign size={16} className="text-rose-600" aria-hidden="true" />
+          </div>
+          <div className="text-3xl font-bold text-slate-900 font-mono tabular-nums">
+            {formatCurrency(stats.totalCost)}
+          </div>
+          <p className="text-xs text-slate-500">
+            รวมค่าขนส่ง ค่าตรวจ ค่าซ่อม และความเสียหาย
+          </p>
+        </div>
+
+        <div className="bg-white border border-rose-100 rounded-xl p-5 space-y-2 shadow-xs shadow-pink-500/5">
+          <div className="flex items-center justify-between text-slate-500 text-xs font-medium">
+            <span>อัตราการนำกลับเข้าสต็อก</span>
+            <RefreshCw size={16} className="text-emerald-600" aria-hidden="true" />
+          </div>
+          <div className="text-3xl font-bold text-slate-900 font-mono tabular-nums">
+            {stats.recoveryRate}%
+          </div>
+          <p className="text-xs text-slate-500 font-mono tabular-nums">
+            นำกลับเข้าคลัง {stats.restockedCount} จาก {stats.inspectedCount} รายการที่ตรวจแล้ว
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white border border-rose-100 rounded-xl p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">
+                ต้นทุนคืนสินค้าแยกตามสาเหตุ (บาท)
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                เปรียบเทียบภาระต้นทุนรวมในแต่ละสาเหตุการคืน
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigateTab('costs')}
+              className="text-xs font-medium text-pink-600 hover:text-pink-700 inline-flex items-center gap-1 whitespace-nowrap cursor-pointer"
+            >
+              <span>วิเคราะห์ต้นทุน</span>
+              <ArrowRight size={13} aria-hidden="true" />
+            </button>
+          </div>
+          <div className="h-72 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={reasonChartData}
+                margin={{ top: 10, right: 16, left: 0, bottom: 16 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#fce7f3" vertical={false} />
+                <XAxis
+                  dataKey="reason"
+                  tick={{ fontSize: 11, fill: '#64748b' }}
+                  interval={0}
+                  angle={-10}
+                  textAnchor="end"
+                  height={48}
+                />
+                <YAxis tick={{ fontSize: 11, fill: '#64748b' }} />
+                <Tooltip
+                  formatter={(value) => [
+                    `฿${Number(value ?? 0).toLocaleString()}`,
+                    'ต้นทุนรวม',
+                  ]}
+                  contentStyle={{
+                    borderRadius: '8px',
+                    border: '1px solid #fbcfe8',
+                    fontSize: '12px',
+                  }}
+                />
+                <Bar dataKey="cost" name="ต้นทุนรวม (บาท)" fill="#ec4899" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-white border border-rose-100 rounded-xl p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">
+                สัดส่วนสถานะคำขอคืนสินค้าปัจจุบัน
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                การกระจายตัวของคำร้องตามขั้นตอน 7-Steps Workflow
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigateTab('requests')}
+              className="text-xs font-medium text-pink-600 hover:text-pink-700 inline-flex items-center gap-1 whitespace-nowrap cursor-pointer"
+            >
+              <span>ดูทั้งหมด</span>
+              <ArrowRight size={13} aria-hidden="true" />
+            </button>
+          </div>
+          <div className="h-72 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={statusChartData}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="45%"
+                  innerRadius={52}
+                  outerRadius={86}
+                  paddingAngle={2}
+                >
+                  {statusChartData.map((_, idx) => (
+                    <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(value) => [`${value ?? 0} รายการ`, 'จำนวน']}
+                  contentStyle={{
+                    borderRadius: '8px',
+                    border: '1px solid #fbcfe8',
+                    fontSize: '12px',
+                  }}
+                />
+                <Legend
+                  verticalAlign="bottom"
+                  height={54}
+                  wrapperStyle={{ fontSize: '11px' }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 bg-white border border-rose-100 rounded-xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-rose-100 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <AlertTriangle size={18} className="text-amber-600" aria-hidden="true" />
+              <h2 className="text-base font-semibold text-slate-900">
+                รายการเฝ้าระวังค้างดำเนินการ (Aging ≥ 3 วัน)
+              </h2>
+            </div>
+            <span className="text-xs font-mono text-slate-500 tabular-nums">
+              {stats.agingAlerts.length} รายการ
+            </span>
+          </div>
+
+          {stats.agingAlerts.length === 0 ? (
+            <div className="p-8 text-center text-sm text-slate-500">
+              ไม่มีรายการค้างคลังเกินกำหนด 3 วัน
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="bg-rose-50/70 text-xs text-rose-900/70 border-b border-rose-100">
+                  <tr>
+                    <th className="py-3 px-4 font-medium">รหัสคำร้อง</th>
+                    <th className="py-3 px-4 font-medium">สินค้า</th>
+                    <th className="py-3 px-4 font-medium">สถานะปัจจุบัน</th>
+                    <th className="py-3 px-4 font-medium text-right">ระยะเวลา</th>
+                    <th className="py-3 px-4 font-medium text-right">ดำเนินการ</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-rose-100/70">
+                  {stats.agingAlerts.map((req) => (
+                    <tr key={req.id} className="hover:bg-rose-50/40 transition-colors">
+                      <td className="py-3 px-4 font-mono text-xs font-semibold text-slate-900 whitespace-nowrap">
+                        {req.id}
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="font-medium text-slate-800 truncate max-w-[200px]">
+                          {req.productName}
+                        </div>
+                        <div className="text-xs text-slate-500 font-mono">
+                          {req.sku} · {req.warehouseId}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <StatusIndicator status={req.status} />
+                      </td>
+                      <td className="py-3 px-4 text-right font-mono text-xs font-semibold text-amber-700 tabular-nums whitespace-nowrap">
+                        {req.agingDays} วัน
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <button
+                          type="button"
+                          onClick={() => onSelectRequest(req, 'tracking')}
+                          className="text-xs font-medium text-pink-600 hover:text-pink-700 whitespace-nowrap cursor-pointer"
+                        >
+                          เปิดดูรายละเอียด
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="bg-white border border-rose-100 rounded-xl overflow-hidden flex flex-col">
+          <div className="px-6 py-4 border-b border-rose-100 flex items-center justify-between">
+            <h2 className="text-base font-semibold text-slate-900">การแจ้งเตือนล่าสุด</h2>
+            <span className="text-xs font-mono text-slate-500 tabular-nums">
+              {notifications.length} รายการ
+            </span>
+          </div>
+          <div className="divide-y divide-rose-100/70 flex-1 overflow-y-auto max-h-80">
+            {notifications.map((note) => (
+              <div key={note.id} className="px-6 py-4 space-y-1 hover:bg-rose-50/40">
+                <p className="text-sm text-slate-800 leading-snug">{note.text}</p>
+                <p className="text-xs text-slate-500">{note.time}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
